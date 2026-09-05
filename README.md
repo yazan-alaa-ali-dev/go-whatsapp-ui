@@ -43,6 +43,24 @@ origin to route from.
 
 CORS is no longer needed: nothing this dashboard sends is cross-origin.
 
+### Cloudflare Workers
+
+`wrangler.jsonc` and `worker/index.js` are that reverse proxy, for the one host
+this repository is actually deployed to. The Worker serves `dist/index.html` and
+forwards `/api/*` (WebSocket included, prefix stripped) and `/health` to the
+backend — the same two rules as the dev proxy in `vite.config.ts`.
+
+Two things are yours to set, because neither belongs in source:
+
+- **`name` in `wrangler.jsonc`** must match the Worker the build is connected
+  to in the Cloudflare dashboard.
+- **`GOWA_ORIGIN`** — the backend's address, as a Worker variable or secret
+  (`npx wrangler secret put GOWA_ORIGIN`). Until it is set the Worker answers
+  `/api` and `/health` with 503, and the dashboard reports itself unreachable.
+
+A base path is allowed (`https://host/gowa`) and is kept in front of every
+forwarded path.
+
 > **Upgrading from a build with the Server URL field?** That build persisted the
 > server address **and a plaintext password** in `localStorage` under
 > `gowa-ui.connection.v1`. This version deletes the key on first load, but the
