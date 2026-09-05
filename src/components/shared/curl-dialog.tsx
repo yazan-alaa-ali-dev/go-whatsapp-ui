@@ -11,19 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { hasFileField, toCurl, type CurlOptions } from '@/lib/curl'
-import { sameOriginBaseUrl } from '@/lib/url'
-import { useConnection } from '@/stores/connection'
+import { hasFileField, toCurl } from '@/lib/curl'
 import { useDeviceStore } from '@/stores/device'
-
-/** Connection details the command needs, mirroring the axios interceptor. */
-function useCurlOptions(): Omit<CurlOptions, 'revealSecrets'> {
-  const baseUrl = useConnection((state) => state.baseUrl)
-  const username = useConnection((state) => state.username)
-  const password = useConnection((state) => state.password)
-  const deviceId = useDeviceStore((state) => state.selectedDeviceId)
-  return { baseUrl: baseUrl ?? sameOriginBaseUrl(), username, password, deviceId }
-}
 
 function CurlDialog({
   request,
@@ -34,14 +23,16 @@ function CurlDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const options = useCurlOptions()
+  const deviceId = useDeviceStore((state) => state.selectedDeviceId)
   const [copied, setCopied] = useState(false)
 
-  const masked = toCurl(request, { ...options, revealSecrets: false })
-  const secret = Boolean(options.username && options.password)
+  // Rendering costs a JSON.stringify of the body, and this dialog is mounted by
+  // every form on screen with a `request` rebuilt on each keystroke — so build
+  // the command only while someone is looking at it.
+  const command = open ? toCurl(request, { deviceId }) : ''
 
   const copy = async () => {
-    await navigator.clipboard.writeText(toCurl(request, { ...options, revealSecrets: true }))
+    await navigator.clipboard.writeText(command)
     setCopied(true)
     toast.success('cURL copied')
     window.setTimeout(() => setCopied(false), 2_000)
@@ -59,12 +50,11 @@ function CurlDialog({
           </DialogDescription>
         </DialogHeader>
         <pre className="bg-muted/50 max-h-80 overflow-auto rounded-lg border p-3 font-mono text-xs">
-          {masked}
+          {command}
         </pre>
-        {(secret || hasFileField(request)) && (
+        {hasFileField(request) && (
           <ul className="text-muted-foreground flex flex-col gap-1 text-xs">
-            {secret && <li>Your password is hidden here — the copied command contains it.</li>}
-            {hasFileField(request) && <li>Replace the filename after @ with the path on disk.</li>}
+            <li>Replace the filename after @ with the path on disk.</li>
           </ul>
         )}
         <DialogFooter showCloseButton>

@@ -131,15 +131,20 @@ artifacts), `.claude/` (workflow config, commands, rules, agents),
    image. Assets are bundled and inlined (`src/assets/`, base64 favicon).
 3. **`HashRouter` only.** It survives `file://` and any mount path the backend
    serves the file under. Never switch to `BrowserRouter`.
-4. **Never hard-code a server origin.** The base URL comes from the connection
-   store; `VITE_DEFAULT_SERVER_URL` only prefills the dev connect screen and the
-   `/gowa` dev proxy.
+4. **Never build a URL outside `src/lib/url.ts`.** Every request goes through
+   the relative same-origin prefix `API_PREFIX` (`/api`) exported there — the
+   backend address is not something this client knows. `VITE_DEFAULT_SERVER_URL`
+   is the dev proxy target in `vite.config.ts` only; nothing under `src/` may
+   read it. `GET /health` is the one path that skips the prefix (the server
+   registers it at its root).
 5. **Do not treat hidden UI as authorization.** Permission-driven rendering is a
    UX affordance; the server enforces. Equally, do not branch on a role *name* —
    roles are composable, so branch on the permission list.
-6. **Do not bypass the interceptors.** One-off axios calls skip auth, device
-   scoping, and 401 handling. The deliberate exception is `probeServer` in
-   `src/stores/connection.ts`, which must stay interceptor-free.
+6. **Do not bypass the interceptors.** One-off axios calls skip device scoping
+   and 401 handling. The deliberate exception is `probeHealth` in
+   `src/stores/connection.ts`, which must stay interceptor-free — the shared
+   instance would prefix `/health` and its 401 handler would call back into the
+   store mid-boot.
 7. **Do not change a persisted store's shape without bumping its version name.**
 8. **Do not add a dependency** for something radix-ui, lucide-react, TanStack
    Query, zustand, or `src/lib/` already covers — it is inlined download weight.

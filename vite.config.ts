@@ -17,14 +17,25 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      // Same-origin fallback for developing against a gowa server without
-      // CORS support: point the UI at http://localhost:5173/gowa instead.
+      // The dev stand-in for the production reverse proxy. The UI only ever
+      // issues same-origin requests, so these two entries are what make
+      // `npm run dev` work at all — there is no URL to type any more.
       proxy: {
-        '/gowa': {
+        // Everything the API serves, WebSocket included. The prefix is stripped
+        // because a default gowa mounts its routes at the root; a backend run
+        // with APP_BASE_PATH=/api wants this rewrite removed.
+        '/api': {
           target: backendUrl,
           changeOrigin: true,
           ws: true,
-          rewrite: (p) => p.replace(/^\/gowa/, ''),
+          rewrite: (p) => p.replace(/^\/api/, ''),
+        },
+        // /health is registered at the server root, outside APP_BASE_PATH, so
+        // it is forwarded as-is. Without this entry the boot probe would be
+        // answered by Vite's own SPA fallback.
+        '/health': {
+          target: backendUrl,
+          changeOrigin: true,
         },
       },
     },

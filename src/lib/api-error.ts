@@ -1,6 +1,5 @@
 import { AxiosError } from 'axios'
 import type { ApiError, ResponseData } from '@/api/types'
-import { b64encode } from '@/lib/url'
 
 export function isApiError(value: unknown): value is ApiError {
   return (
@@ -30,8 +29,4 @@ export function toApiError(error: unknown): ApiError {
     code: 'UNKNOWN',
     message: error instanceof Error ? error.message : String(error),
   }
-}
-
-export function basicAuthHeader(username: string, password: string): string {
-  return `Basic ${b64encode(`${username}:${password}`)}`
 }

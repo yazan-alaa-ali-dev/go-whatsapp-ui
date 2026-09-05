@@ -1,0 +1,26 @@
+{
+  // Cloudflare Workers deployment. Without this file `wrangler versions upload`
+  // aborts with "Missing entry-point to Worker script or to assets directory",
+  // because nothing tells it what to publish.
+  //
+  // `name` must match the Worker this build is connected to in the Cloudflare
+  // dashboard. Rename it here if yours is called something else.
+  "name": "gowa-ui",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-03",
+
+  // The single-file build. `binding` exposes it to the Worker as env.ASSETS,
+  // which is what lets the Worker answer /api/* and /health itself and hand
+  // everything else back to the static asset server.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+
+  // GOWA_ORIGIN is the backend's address (scheme + host, optionally a base
+  // path) and is deliberately NOT set here: it is deployment configuration, not
+  // source. Set it as a Worker variable or secret. Left unset, the Worker
+  // serves the dashboard and answers /api and /health with 503 — the dashboard
+  // then reports itself unreachable, which is the truth.
+  "vars": {}
+}

@@ -1,17 +1,17 @@
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios'
 import type { ResponseData } from '@/api/types'
-import { basicAuthHeader, toApiError } from '@/lib/api-error'
+import { toApiError } from '@/lib/api-error'
+import { API_PREFIX } from '@/lib/url'
 import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
 
-export const http: AxiosInstance = axios.create({ timeout: 45_000 })
+/**
+ * Every request leaves through the same relative prefix, so the backend address
+ * is not something this client can know or reveal.
+ */
+export const http: AxiosInstance = axios.create({ baseURL: API_PREFIX, timeout: 45_000 })
 
 http.interceptors.request.use((config) => {
-  const { baseUrl, username, password } = useConnection.getState()
-  config.baseURL = baseUrl ?? ''
-  if (username && password && !config.headers.Authorization) {
-    config.headers.Authorization = basicAuthHeader(username, password)
-  }
   const deviceId = useDeviceStore.getState().selectedDeviceId
   if (deviceId && !config.headers['X-Device-Id']) {
     config.headers['X-Device-Id'] = encodeURIComponent(deviceId)
