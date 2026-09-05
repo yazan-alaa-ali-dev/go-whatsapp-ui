@@ -38,4 +38,26 @@ describe('toApiError', () => {
     expect(isApiError(toApiError(new Error('boom')))).toBe(true)
     expect(toApiError(new Error('boom')).message).toBe('boom')
   })
+
+  /**
+   * AC-18 otherwise rests on a source scan, which cannot see what a value
+   * carries at runtime. An axios error holds the whole request config, headers
+   * included; what leaves this function must not.
+   */
+  it('drops the request that failed, so a bearer token cannot ride out on an error', () => {
+    const token = 'eyJhbGciOiJIUzI1NiJ9.header-payload.signature'
+    const failed = new AxiosError('Request failed', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 401,
+      data: { code: 'AUTHENTICATION_ERROR', message: 'token rejected' },
+      statusText: '',
+      headers: {},
+      config: { headers: { Authorization: `Bearer ${token}` } },
+    } as unknown as AxiosResponse)
+
+    const serialised = JSON.stringify(toApiError(failed))
+
+    expect(serialised).not.toContain(token)
+    expect(serialised).not.toContain('Bearer')
+    expect(Object.keys(toApiError(failed))).toEqual(['status', 'code', 'message'])
+  })
 })

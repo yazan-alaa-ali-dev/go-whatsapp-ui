@@ -32,6 +32,7 @@ describe('toCurl', () => {
     expect(toCurl(textRequest, base)).toBe(
       [
         "curl -X POST 'https://dash.example.com/api/send/message' \\",
+        "  -H 'Authorization: Bearer <token>' \\",
         "  -H 'Content-Type: application/json' \\",
         "  -d '{",
         '    "phone": "628123@s.whatsapp.net",',
@@ -41,9 +42,19 @@ describe('toCurl', () => {
     )
   })
 
-  it('carries no credential — there is none to render', () => {
+  it('stands in for the credential rather than rendering one', () => {
     const command = toCurl(textRequest, base)
+    // Every endpoint rendered here is guarded, so the command needs the header
+    // the interceptor attaches — but it is a placeholder, exactly like the
+    // `@filename` this file renders for a picked file. Nothing reads a token.
+    expect(command).toContain("-H 'Authorization: Bearer <token>'")
     expect(command).not.toContain('-u ')
+  })
+
+  it('cannot leak a token, because it is given none to read', () => {
+    const command = toCurl(textRequest, base)
+    expect(command).not.toContain('eyJ')
+    expect(command.match(/Bearer [^<]/)).toBeNull()
   })
 
   it('includes the url-encoded device header when a device is selected', () => {

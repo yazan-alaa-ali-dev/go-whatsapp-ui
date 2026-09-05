@@ -15,14 +15,19 @@ export function shellQuote(value: string): string {
 }
 
 /**
- * Render a request as a runnable curl command. The URL and the device header
- * mirror what the axios interceptor attaches, so the command is the request the
- * UI would send. The address is the page's own origin — the proxy the operator
+ * Render a request as a runnable curl command. The URL and the headers mirror
+ * what the axios interceptor attaches, so the command is the request the UI
+ * would send. The address is the page's own origin — the proxy the operator
  * already reached this dashboard through, never the backend behind it.
  */
 export function toCurl(request: ApiRequest, opts: CurlOptions): string {
   const url = opts.origin ? absoluteApiUrl(request.path, opts.origin) : absoluteApiUrl(request.path)
   const parts = [`curl -X ${request.method} ${shellQuote(url)}`]
+
+  // Every endpoint rendered here is guarded, so the command needs the bearer
+  // token the interceptor adds — but a copied credential is a leaked one, so
+  // this stands in for it exactly as `@filename` stands in for a picked file.
+  parts.push(`-H ${shellQuote('Authorization: Bearer <token>')}`)
 
   if (opts.deviceId) {
     parts.push(`-H ${shellQuote(`X-Device-Id: ${encodeURIComponent(opts.deviceId)}`)}`)
