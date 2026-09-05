@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
 import { onWsEvent } from '@/lib/events'
 import { wsClient } from '@/lib/ws'
+import { useAuth } from '@/stores/auth'
 import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
 import AccountPage from '@/pages/account'
@@ -20,6 +21,10 @@ function useBootstrap() {
 
   useEffect(() => {
     void useConnection.getState().boot()
+    // Independent of the probe on purpose: boot() issues no request at all
+    // without a token in a cookie, and a 401 from /auth/me no longer touches
+    // the connection status, so there is nothing left to order these by.
+    void useAuth.getState().boot()
   }, [])
 
   useEffect(() => {
