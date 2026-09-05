@@ -1,0 +1,273 @@
+# Canonical workflow configuration for Engineering Workflow v1.
+# This file is the SINGLE source of truth for stages, the state machine, the
+# single workflow form + comprehension gate, closure, and decisions. All other
+# docs describe/reference it and must not contradict it. (`workflow.yml` retired.)
+
+project:
+  name: gowa-ui
+  slug: go-whatsapp-ui
+  description: >-
+    Web dashboard (SPA) for the GOWA multi-device WhatsApp API server.
+    React 19 + TypeScript + Vite 8, Tailwind v4 + shadcn/ui (radix-ui),
+    TanStack Query for server state, zustand for client state, react-router-dom,
+    axios REST client + a WebSocket event stream. Built with
+    vite-plugin-singlefile into one `dist/index.html` that the backend
+    downloads at runtime and serves at `/`.
+    The npm project root IS the repository root; application code lives under
+    `src/` — see `AGENTS.md` for the repository map.
+
+workflow:
+  version: v1
+
+stages:
+  - intake
+  - research
+  - spec
+  - plan
+  - review
+  - implement
+  - verify
+
+# ---------------------------------------------------------------------------
+# Canonical ticket state machine. `blocked` is NOT a state; it is an orthogonal
+# flag carried in artifact front-matter (see artifact_status). Each entry lists
+# the ONLY allowed next states; anything not listed is a forbidden transition.
+# ---------------------------------------------------------------------------
+lifecycle:
+  # Single canonical owner of ticket state (ADR-003). Commands read/write this
+  # file and must never infer state from artifact existence.
+  state_record: _specs/<ticket>/ticket.md
+  initial: draft
+  terminal: closed
+  states:
+    draft:                       [ready-for-research, closed]
+    ready-for-research:          [research-complete, closed]
+    research-complete:           [spec-complete, research-complete, closed]
+    spec-complete:               [plan-complete, research-complete, closed]
+    plan-complete:               [approved, plan-complete, spec-complete, closed]
+    approved:                    [implementation-in-progress, plan-complete, closed]
+    implementation-in-progress:  [implemented, closed]
+    implemented:                 [verified, implementation-in-progress, closed]
+    verified:                    [closed, implementation-in-progress]
+    closed:                      []   # terminal — no reopen; open a new ticket
+  artifact_status: [not_started, in_progress, blocked, complete]
+
+# ---------------------------------------------------------------------------
+# Single uniform workflow form (ADR-009). There are NO execution modes and NO
+# risk tiers: every ticket runs the same seven stages with the same safeguards.
+# A single OWNER carries the ticket end to end and runs its own gates
+# (self-review is expected) — there is no separate reviewer and no separation of
+# duties. Gate integrity comes from the COMPREHENSION check (comprehension_gates),
+# not a second person. `standard`/`high_risk`/`fast` are gone; the `mode`
+# front-matter field is a legacy single value (`mode: standard`).
+# ---------------------------------------------------------------------------
+workflow_form:
+  legacy_mode_value: standard   # the sole legal `mode:` value in artifact front-matter
+  stages: [intake, research, spec, plan, review, implement, verify]
+  owner_runs_own_gates: true    # the ticket owner runs /review and /verify themselves
+  approvals: 1                  # a single self-approval by the owner
+  adr_required: false           # ADRs optional (record notable decisions if useful)
+  verification: all-ac          # every acceptance criterion mapped to a result
+  review_gate: always           # /review + /verify are mandatory steps, never skipped
+
+# ---------------------------------------------------------------------------
+# Comprehension gate (ADR-009) — the control that replaces a second reviewer.
+# At every gate the owner must answer questions generated FROM the artifact under
+# review; the gate cannot record its decision until a comprehension record exists
+# with the questions answered. Enforced by CG-1..CG-4 (validation-model.md).
+# ---------------------------------------------------------------------------
+comprehension_gates:
+  enabled: true
+  required: always              # every gate, every ticket — no exceptions
+  stages: [review, verify]      # the decision gates that ask before deciding
+  questions: 3                  # 2–3 questions derived from the artifact under review
+  options_min: 4                # each question offers ≥4 answers (1 correct + ≥3 distractors)
+  pass_threshold: 1.0           # 100% correct required; any wrong answer blocks the gate
+  record: _specs/<ticket>/comprehension.md
+  ai_graded: false              # optional: AI scores answers vs the artifact (off by default)
+
+# ---------------------------------------------------------------------------
+# Advisory review panel (ADR-010) — AI reviewer lenses that assist the single
+# owner at /review. Each lens is a read-only subagent (.claude/agents/) that
+# reviews plan.md + spec.md and returns findings. ADVISORY: findings inform the
+# owner but never block APPROVED — the owner still decides, and the comprehension
+# gate remains the integrity control (ADR-009). Enforced by RP-1..RP-4.
+# ---------------------------------------------------------------------------
+review_panel:
+  enabled: true
+  advisory: true                # findings inform the owner; a lens NEVER blocks the decision
+  stage: review                 # runs inside /review only, before the comprehension gate
+  lenses:                       # one read-only subagent per lens, run in parallel
+    - senior                    # .claude/agents/senior-reviewer.md
+    - security                  # .claude/agents/security-reviewer.md
+    - performance               # .claude/agents/performance-reviewer.md
+  record: _specs/<ticket>/review.md   # findings recorded in the "Panel Findings" section
+
+# ---------------------------------------------------------------------------
+# Gate notifications (ADR-011) — a deterministic Telegram notice on every gate
+# decision, sent by a local PostToolUse hook (.claude/hooks/notify_gate.py) that
+# fires when comprehension.md is written. Token/chat come from the local config
+# file or env on the dev machine and are NEVER committed. The hook never edits
+# the deployment runtime files (.github/workflows/ci.yml, .github/workflows/
+# release.yml, vite.config.ts, package.json) and never changes workflow state
+# (one-way, workflow -> Telegram). Enforced by NT-1..NT-3.
+# ---------------------------------------------------------------------------
+notifications:
+  enabled: true
+  channel: telegram             # telegram first; email (reuse mail.ramaaz.com) added later
+  enforcement: warn             # warn (fail-open) | block (fail-closed via hook exit 2)
+  trigger: _specs/<ticket>/comprehension.md   # PostToolUse(Write|Edit) on this path — Edit included: the 2nd gate updates an existing file
+  # Delivery config: shared file .claude/notifications.json (gitignored — holds the
+  # bot token; copy from notifications.example.json). Env overrides it, higher
+  # priority (never committed): WF_TELEGRAM_BOT_TOKEN / _CHAT_ID / _TOPIC_ID,
+  # WF_NOTIFY_ENFORCEMENT, WF_NOTIFY_DRYRUN.
+
+# ---------------------------------------------------------------------------
+# Single closure strategy: there is no /close command. A ticket moves
+# verified -> closed at /verify sign-off, performed by the reviewer.
+# ---------------------------------------------------------------------------
+closure:
+  # No /close command. Closure is owned by two commands:
+  strategy: no-close-command
+  paths:
+    success:                       # successful implementation
+      owner: /verify
+      performed_by: reviewer
+      transition: verified -> closed
+    rejection:                     # plan rejected at the review gate
+      owner: /review
+      performed_by: reviewer
+      transition: spec-complete -> closed
+
+# Architectural decision tracking.
+decisions:
+  location: .claude/docs/adr/
+  template: .claude/docs/adr/ADR-0000-template.md
+
+roles:
+  workflow_owner:
+    description: >-
+      Owns workflow governance — workflow evolution, governance decisions,
+      escalations, and cross-project issues. NOT a per-ticket gate; does not
+      participate in every ticket.
+  reviewer:
+    description: >-
+      The actor at a review gate (/review, /verify). Under the single-owner model
+      (ADR-009) this is normally the ticket OWNER running their own gate
+      (self-review); a distinct reviewer is not required.
+  developer:
+    description: Implements approved plans and authors ticket artifacts.
+  ai_agent:
+    description: Assists across stages within the rules in CLAUDE.md.
+  # Legacy: earlier artifacts recorded `em` as the gate/governance actor. `em`
+  # now maps to `reviewer` (per-ticket gate) and `workflow_owner` (governance).
+
+# Role authority (single-owner; separation of duties removed — validation: RA-1..RA-3).
+role_authority:
+  gate_commands: [review, verify]     # run by the ticket owner themselves (self-review) — no distinct reviewer required
+  author_commands: [start-ticket, research, spec, plan, implement]   # developer/ai_agent
+  delivery_commands: [publish-pr]     # additive (wf-004/ADR-007); developer/ai_agent. Delivery only — orthogonal to the state machine, never a gate, performs no state transition.
+  governance_owner: workflow_owner    # owns evolution/escalation; not a per-ticket gate
+separation_of_duties:
+  enabled: false
+  rule: >-
+    Single-owner model (ADR-009): there is NO separation of duties. The ticket
+    owner authors the work AND runs its /review and /verify gates themselves
+    (self-review is expected). The comprehension gate (comprehension_gates) is the
+    control against rubber-stamping — not a distinct reviewer. All recorded actors
+    (owner, history `by`) must still be defined roles.
+
+features:
+  clickup: true
+  github: true
+  deployment_runtime: true
+
+# ---------------------------------------------------------------------------
+# Deployment runtime files — the CANONICAL list for this repository (GU-2/IM-5
+# and the CLAUDE.md hard-stop). These decide how the SPA is built and shipped as
+# the single-file asset the backend downloads at runtime; every other doc that
+# names them must reference this list rather than repeat its own.
+# ---------------------------------------------------------------------------
+deployment_runtime:
+  files:
+    - .github/workflows/ci.yml        # CI: typecheck / lint / test / build
+    - .github/workflows/release.yml   # publishes the dist asset consumed by the backend
+    - vite.config.ts                  # build shape (singlefile plugin, base, dev proxy)
+    - package.json                    # scripts + dependency set the build runs on
+    - index.html                      # the SPA entry document the build inlines into
+
+# ---------------------------------------------------------------------------
+# Validation profiles (WF-PILOT-003). TWO SEPARATE, ADDITIVE concepts:
+#   validation_checks   — DEFINITIONS: check-id -> command + pass condition.
+#                         Commands live ONLY here.
+#   validation_profiles — SELECTION: profile-id -> required check-ids + depth.
+#                         Profiles reference check-ids ONLY (never a command).
+# A ticket optionally names ONE profile in plan.md "Validation strategy".
+# /verify resolves profile -> checks -> commands, executes them LOCALLY
+# (deterministic, non-interactive, read-only), and records command, exit code,
+# output summary, and result mapped to AC-n. No profile referenced => unchanged
+# behavior. Local execution only — no GitHub/CI-CD/MCP/external runner.
+# Validation: VP-1..VP-5 in validation-model.md. Decision: ADR-006.
+# ---------------------------------------------------------------------------
+# NOTE: the npm project root IS the repository root, so every command below is
+# runnable verbatim from there, in any shell (VP-3: deterministic,
+# non-interactive), without a shell-specific `cd &&` prefix. `npm run <script>`
+# is used rather than a bare binary so the scripts in package.json stay the
+# single definition of how the project is checked.
+validation_checks:
+  ui-typecheck:
+    description: The whole TypeScript project type-checks (tsc -b, no emit).
+    command: "npm run typecheck"
+    pass_when: exit-zero          # exit-zero | exit-code:<n>
+    # output_contains: "<substring>"   # optional additional pass condition
+  ui-lint:
+    description: oxlint reports no lint errors.
+    command: "npm run lint"
+    pass_when: exit-zero
+  ui-test:
+    description: The vitest suite passes (tests are colocated as *.test.ts).
+    command: "npm run test"
+    pass_when: exit-zero
+  ui-build:
+    description: The production build succeeds (tsc -b + vite build).
+    command: "npm run build"
+    pass_when: exit-zero
+  ui-format:
+    description: >-
+      Prettier reports no formatting drift. DEFINED BUT NOT IN ANY PROFILE ON
+      PURPOSE: the repository does not currently pass it (pre-existing drift the
+      CI does not check either), so requiring it would fail every ticket for
+      reasons the ticket did not cause. A ticket that deliberately reformats may
+      name it in its own plan.md Validation strategy.
+    command: "npm run format:check"
+    pass_when: exit-zero
+
+# Profiles mirror the CI job (.github/workflows/ci.yml) so a ticket that passes
+# /verify locally passes CI: typecheck -> lint -> build.
+validation_profiles:
+  ui-source:
+    description: >-
+      Default profile for a UI ticket — application source changes under src/.
+      Type safety, lint, and the colocated unit tests are the gate.
+    requires:
+      - check: ui-typecheck
+        depth: all-ac             # verification depth (MO-6): all-ac for every ticket
+      - check: ui-lint
+        depth: all-ac
+      - check: ui-test
+        depth: all-ac
+  ui-build:
+    description: >-
+      ui-source plus a full production build (what CI actually runs). Use when
+      the change can break the bundle rather than only the source — build
+      config, entry document, dependency set, asset handling, or anything in the
+      deployment_runtime list.
+    requires:
+      - check: ui-typecheck
+        depth: all-ac
+      - check: ui-lint
+        depth: all-ac
+      - check: ui-test
+        depth: all-ac
+      - check: ui-build
+        depth: all-ac

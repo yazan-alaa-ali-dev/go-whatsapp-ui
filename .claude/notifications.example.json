@@ -1,0 +1,9 @@
+{
+  "telegram": {
+    "enabled": true,
+    "botToken": "REPLACE_WITH_TELEGRAM_BOT_TOKEN",
+    "chatId": "REPLACE_WITH_TELEGRAM_CHAT_ID",
+    "topicId": 0
+  },
+  "enforcement": "warn"
+}
