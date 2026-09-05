@@ -7,13 +7,11 @@ import { toApiError } from '@/lib/api-error'
 import { formatBytes } from '@/lib/format'
 import { rerootServerUrl } from '@/lib/url'
 import { useAppInfo } from '@/hooks/use-app-info'
-import { useConnection } from '@/stores/connection'
 import type { MessageInfo } from '@/api/chat'
 
 /** Lazily downloads media for a message and renders it inline once fetched. */
 export function MessageMedia({ message }: { message: MessageInfo }) {
   const [open, setOpen] = useState(false)
-  const baseUrl = useConnection((state) => state.baseUrl)
   const { data: info } = useAppInfo()
 
   const query = useQuery({
@@ -46,7 +44,7 @@ export function MessageMedia({ message }: { message: MessageInfo }) {
     )
   }
 
-  const src = rerootServerUrl(baseUrl ?? '', query.data.file_path, info?.base_path ?? '')
+  const src = rerootServerUrl(query.data.file_path, info?.base_path ?? '')
   const type = message.media_type
 
   return (

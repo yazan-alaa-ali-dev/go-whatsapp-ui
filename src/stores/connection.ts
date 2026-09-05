@@ -1,110 +1,79 @@
 import axios from 'axios'
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
-import type { ResponseData } from '@/api/types'
-import { basicAuthHeader } from '@/lib/api-error'
-import { normalizeBaseUrl, sameOriginBaseUrl } from '@/lib/url'
+import { HEALTH_PATH } from '@/lib/url'
 
-export type ConnectionStatus =
-  'booting' | 'unconfigured' | 'connected' | 'unauthorized' | 'unreachable'
+export type ConnectionStatus = 'booting' | 'connected' | 'unauthorized' | 'unreachable'
 
-export type TestResult = 'ok' | 'unauthorized' | 'not-gowa' | 'unreachable'
+/** The key an older bundle persisted the backend URL and password under. */
+const LEGACY_STORAGE_KEY = 'gowa-ui.connection.v1'
+
+/** The probe gates first paint, so its worst case is a blank screen. */
+const PROBE_TIMEOUT_MS = 5_000
 
 export interface ConnectionState {
-  baseUrl: string | null
-  username: string | null
-  password: string | null
   status: ConnectionStatus
-  connect: (baseUrl: string, username?: string, password?: string) => Promise<TestResult>
   boot: () => Promise<void>
-  disconnect: () => void
   markUnauthorized: () => void
 }
 
 /**
- * Probe a server without the shared axios instance (no interceptors, no
- * global 401 handling). Distinguishes a real gowa server from any web server
- * that happens to answer 200 (e.g. an SPA dev server echoing index.html).
+ * Liveness probe against GET /health.
+ *
+ * Deliberately interceptor-free (AGENTS.md anti-pattern #6): the shared `http`
+ * instance carries baseURL=/api, which would prefix a path the server registers
+ * at its root, and its 401 handler would call back into this store mid-boot.
+ *
+ * There is nothing to identify any more — the address is not configurable — so
+ * this asks one question: did the backend answer? Both halves of the rule earn
+ * their place. A 200 that is text/html is the SPA fallback answering for a
+ * backend that never saw the request. A non-200 is the backend, or a gateway,
+ * saying it is down: /health has a documented 503, and 502/504 proxy pages are
+ * commonly text/plain. The body is not parsed — a plain-text "OK" is a healthy
+ * server, and gowa's payload is not pinned by the reference.
  */
-export async function probeServer(
-  baseUrl: string,
-  username?: string,
-  password?: string,
-): Promise<TestResult> {
+export async function probeHealth(): Promise<ConnectionStatus> {
   try {
-    const response = await axios.get<ResponseData<unknown>>(`${baseUrl}/devices`, {
-      timeout: 8_000,
+    const response = await axios.get(HEALTH_PATH, {
+      timeout: PROBE_TIMEOUT_MS,
       validateStatus: () => true,
-      headers: {
-        Accept: 'application/json',
-        ...(username && password ? { Authorization: basicAuthHeader(username, password) } : {}),
-      },
+      headers: { Accept: 'application/json, text/plain' },
     })
-    if (response.status === 401) return 'unauthorized'
-    const body = response.data
-    if (response.status === 200 && typeof body === 'object' && body !== null && 'code' in body) {
-      return 'ok'
-    }
-    return 'not-gowa'
+    if (response.status === 401 || response.status === 403) return 'unauthorized'
+    const contentType = String(response.headers['content-type'] ?? '')
+    if (response.status === 200 && !contentType.includes('text/html')) return 'connected'
+    return 'unreachable'
   } catch {
     return 'unreachable'
   }
 }
 
-export const useConnection = create<ConnectionState>()(
-  persist(
-    (set, get) => ({
-      baseUrl: null,
-      username: null,
-      password: null,
-      status: 'booting',
+/**
+ * Drop what an older bundle left behind: that key held the backend address and
+ * a plaintext password, and a key nothing writes any more is still a key
+ * anything running in this page can read.
+ *
+ * Runs inside boot() rather than at module scope — this module is imported by
+ * http.ts and ws.ts, and an import-time storage touch throws under the Node
+ * test environment and in a browser with storage blocked, taking the app down
+ * with it.
+ */
+function clearLegacyStorage(): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    // storage disabled — nothing to clear, and nothing worth failing over
+  }
+}
 
-      connect: async (rawUrl, username, password) => {
-        const baseUrl = normalizeBaseUrl(rawUrl)
-        const result = await probeServer(baseUrl, username, password)
-        if (result === 'ok') {
-          set({
-            baseUrl,
-            username: username || null,
-            password: password || null,
-            status: 'connected',
-          })
-        }
-        return result
-      },
+export const useConnection = create<ConnectionState>()((set, get) => ({
+  status: 'booting',
 
-      boot: async () => {
-        const { baseUrl, username, password } = get()
-        if (baseUrl) {
-          const stored = await probeServer(baseUrl, username ?? undefined, password ?? undefined)
-          if (stored === 'ok') {
-            set({ status: 'connected' })
-            return
-          }
-          set({ status: stored === 'unauthorized' ? 'unauthorized' : 'unreachable' })
-          return
-        }
-        // Zero-config: the page may be served by gowa itself. The browser
-        // replays cached basic-auth credentials on same-origin requests.
-        const origin = sameOriginBaseUrl()
-        if ((await probeServer(origin)) === 'ok') {
-          set({ baseUrl: origin, status: 'connected' })
-          return
-        }
-        set({ status: 'unconfigured' })
-      },
+  boot: async () => {
+    clearLegacyStorage()
+    set({ status: await probeHealth() })
+  },
 
-      disconnect: () =>
-        set({ baseUrl: null, username: null, password: null, status: 'unconfigured' }),
-
-      markUnauthorized: () => {
-        if (get().status === 'connected') set({ status: 'unauthorized' })
-      },
-    }),
-    {
-      name: 'gowa-ui.connection.v1',
-      storage: createJSONStorage(() => localStorage),
-      partialize: ({ baseUrl, username, password }) => ({ baseUrl, username, password }),
-    },
-  ),
-)
+  markUnauthorized: () => {
+    if (get().status === 'connected') set({ status: 'unauthorized' })
+  },
+}))

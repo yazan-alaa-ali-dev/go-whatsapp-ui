@@ -10,21 +10,45 @@ Built with React 19, TypeScript, Vite, Tailwind CSS 4, and shadcn/ui.
 
 ## How to use it
 
-Pick one:
+The dashboard sends **every** request to its own origin, under the relative
+prefix `/api`. It has no server-URL field and stores no address: whatever serves
+this page must also route the API. That leaves one supported deployment shape:
 
-1. **Served by gowa** — gowa downloads the latest `gowa-ui.html` release and serves it at `/`. (Planned; lands with the parity cutover.)
-2. **Host it yourself** — put the built file on any static host (GitHub Pages works). On first load, enter your server URL and basic-auth credentials; they're saved in `localStorage`.
-3. **Open the file directly** — download `gowa-ui.html` from a release and open it in a browser. Works, but some browser APIs need an HTTP origin, so hosting is better for daily use.
+**Served behind the same origin as gowa** — gowa serves `gowa-ui.html` at `/`,
+or a reverse proxy serves the file and forwards the API. Either way the browser
+only ever talks to the address already in its address bar.
 
-## What your gowa server needs
+Hosting the file on an unrelated static host, or opening it from `file://`, is no
+longer supported: there is no URL to point at a backend, and `file://` has no
+origin to route from.
 
-The dashboard talks to gowa from the browser, so the server needs a few cross-origin features:
+## What your deployment needs
 
-- **CORS** — allow the `Authorization` and `X-Device-Id` headers.
-- **REST auth** — `Authorization: Basic <base64(user:pass)>` header.
+- **`/api/*` on this origin must reach the backend** — either a reverse proxy
+  that strips the `/api` prefix, or gowa run with `APP_BASE_PATH=/api`.
+- **`/health` on this origin must reach the backend root.** This one is a boot
+  gate: `/health` is registered outside `APP_BASE_PATH`, so it is requested
+  unprefixed. Map only `/api` and the dashboard reports itself unreachable
+  forever while the API works perfectly.
+- **Serve the bundle at the origin root.** `/api` is root-absolute, so a
+  dashboard mounted under a sub-path would send its requests to the wrong place.
+  (Routing itself is unaffected — `HashRouter` works at any mount path.)
+- **Rewrite absolute URLs in responses, if the internal host matters to you.**
+  gowa builds `qr_link` and media `file_path` from its own `Host` header, so the
+  internal address travels inside the JSON body. The UI never *uses* it — it
+  re-roots every such URL onto `/api` — but stripping it from the payload is the
+  proxy's job, not the browser's.
 - **Device selection** — `X-Device-Id` header (URL-encoded) or `?device_id=` query.
-- **WebSocket auth** — `/ws?device_id=<id>&authorization=<base64(user:pass)>`. Browsers can't set headers on WebSocket connections, so the credential goes in the query string — use TLS.
 - **Server info** — `GET /app/info` (version, media size limits).
+
+CORS is no longer needed: nothing this dashboard sends is cross-origin.
+
+> **Upgrading from a build with the Server URL field?** That build persisted the
+> server address **and a plaintext password** in `localStorage` under
+> `gowa-ui.connection.v1`. This version deletes the key on first load, but the
+> secret was readable by anything running in the page for as long as it sat
+> there, and your browser's password manager may still hold a copy. Treat it as
+> exposed and rotate it.
 
 ## Development
 
@@ -34,10 +58,11 @@ npm install
 npm run dev
 ```
 
-Then connect the app to your server, either way:
-
-- **Directly** — enter `http://localhost:3000` on the connect screen (needs a gowa build with the CORS features above).
-- **Via the dev proxy** — enter `http://localhost:5173/gowa` instead; Vite forwards everything (WebSocket included) to `VITE_DEFAULT_SERVER_URL`, so CORS doesn't matter.
+That's the whole setup — there is nothing to connect. Vite's dev proxy stands in
+for the production reverse proxy: it forwards `/api/*` (WebSocket included) to
+`VITE_DEFAULT_SERVER_URL` with the prefix stripped, and `/health` to the same
+target unchanged. If your backend runs with `APP_BASE_PATH=/api`, drop the
+`rewrite` line from the `/api` entry in `vite.config.ts`.
 
 Other scripts: `npm run build` (single-file production build into `dist/index.html`), `typecheck`, `lint`, `format`, `preview`.
 

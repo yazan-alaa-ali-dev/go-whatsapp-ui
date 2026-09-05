@@ -1,6 +1,5 @@
 import { useTheme } from 'next-themes'
 import { PageHeader } from '@/components/shared/page-header'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -12,12 +11,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppInfo } from '@/hooks/use-app-info'
 import { formatBytes } from '@/lib/format'
-import { useConnection } from '@/stores/connection'
+import { API_PREFIX } from '@/lib/url'
 
 export default function SettingsPage() {
-  const baseUrl = useConnection((state) => state.baseUrl)
-  const username = useConnection((state) => state.username)
-  const disconnect = useConnection((state) => state.disconnect)
   const { data: info, isLoading: infoLoading, error: infoError } = useAppInfo()
   const { theme, setTheme } = useTheme()
 
@@ -35,18 +31,17 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
           <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Server</span>
-            <span className="truncate font-mono">{baseUrl}</span>
+            <span className="text-muted-foreground">API path</span>
+            <span className="font-mono">{API_PREFIX}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Username</span>
-            <span className="font-mono">{username || '— (no basic auth)'}</span>
+            <span className="text-muted-foreground">Origin</span>
+            <span className="font-mono">same as this page</span>
           </div>
-          <div>
-            <Button variant="outline" size="sm" onClick={disconnect}>
-              Disconnect
-            </Button>
-          </div>
+          <p className="text-muted-foreground">
+            Every request leaves through this relative path, so the dashboard never holds the
+            backend address — the proxy in front of it does.
+          </p>
         </CardContent>
       </Card>
 

@@ -3,11 +3,8 @@ import type { ApiRequest } from '@/api/request'
 import { shellQuote, toCurl } from './curl'
 
 const base = {
-  baseUrl: 'http://localhost:3000',
-  username: 'admin',
-  password: 's3cr3t',
   deviceId: null,
-  revealSecrets: true,
+  origin: 'https://dash.example.com',
 }
 
 const textRequest: ApiRequest = {
@@ -31,11 +28,10 @@ describe('shellQuote', () => {
 })
 
 describe('toCurl', () => {
-  it('renders method, url, auth and a json body indented under -d', () => {
+  it('renders method, prefixed same-origin url, and a json body indented under -d', () => {
     expect(toCurl(textRequest, base)).toBe(
       [
-        "curl -X POST 'http://localhost:3000/send/message' \\",
-        "  -u 'admin:s3cr3t' \\",
+        "curl -X POST 'https://dash.example.com/api/send/message' \\",
         "  -H 'Content-Type: application/json' \\",
         "  -d '{",
         '    "phone": "628123@s.whatsapp.net",',
@@ -45,14 +41,8 @@ describe('toCurl', () => {
     )
   })
 
-  it('masks the password unless secrets are revealed', () => {
-    const masked = toCurl(textRequest, { ...base, revealSecrets: false })
-    expect(masked).toContain("-u 'admin:••••••••'")
-    expect(masked).not.toContain('s3cr3t')
-  })
-
-  it('omits auth entirely when no credentials are configured', () => {
-    const command = toCurl(textRequest, { ...base, username: null, password: null })
+  it('carries no credential — there is none to render', () => {
+    const command = toCurl(textRequest, base)
     expect(command).not.toContain('-u ')
   })
 
@@ -62,10 +52,9 @@ describe('toCurl', () => {
     )
   })
 
-  it('joins base url and path without doubling the slash', () => {
-    expect(toCurl(textRequest, { ...base, baseUrl: 'http://localhost:3000/' })).toContain(
-      "'http://localhost:3000/send/message'",
-    )
+  it('builds on the page origin, never on a backend address', () => {
+    const command = toCurl(textRequest, { ...base, origin: 'http://localhost:5173' })
+    expect(command).toContain("'http://localhost:5173/api/send/message'")
   })
 
   it('escapes a body containing an apostrophe so the command stays runnable', () => {

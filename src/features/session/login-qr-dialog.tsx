@@ -14,7 +14,6 @@ import { useAppInfo } from '@/hooks/use-app-info'
 import { toApiError } from '@/lib/api-error'
 import { onWsEvent } from '@/lib/events'
 import { rerootServerUrl } from '@/lib/url'
-import { useConnection } from '@/stores/connection'
 import type { LoginQr, RegistryDevice } from '@/api/types'
 
 const STATUS_POLL_MS = 3_000
@@ -27,7 +26,6 @@ export function LoginQrDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const queryClient = useQueryClient()
-  const baseUrl = useConnection((state) => state.baseUrl)
   const { data: info } = useAppInfo()
   const [qr, setQr] = useState<LoginQr | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -105,9 +103,9 @@ export function LoginQrDialog({
   }, [deviceId, qr, requestQr])
 
   const qrSrc = useMemo(() => {
-    if (!qr || !baseUrl) return null
-    return rerootServerUrl(baseUrl, qr.qr_link, info?.base_path ?? '')
-  }, [qr, baseUrl, info?.base_path])
+    if (!qr) return null
+    return rerootServerUrl(qr.qr_link, info?.base_path ?? '')
+  }, [qr, info?.base_path])
 
   return (
     <Dialog open={device !== null} onOpenChange={onOpenChange}>

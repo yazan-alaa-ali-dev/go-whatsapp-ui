@@ -1,16 +1,12 @@
 import { formFields, type ApiRequest } from '@/api/request'
-import { joinUrl } from '@/lib/url'
+import { absoluteApiUrl } from '@/lib/url'
 
-const MASK = '••••••••'
 const INDENT = '  '
 
 export interface CurlOptions {
-  baseUrl: string
-  username?: string | null
-  password?: string | null
   deviceId?: string | null
-  /** False renders the password as a mask, for display on screen. */
-  revealSecrets: boolean
+  /** The page's own origin. A parameter only so this is testable off-browser. */
+  origin?: string
 }
 
 /** Quote a value for a POSIX shell: close, escape, reopen around each quote. */
@@ -19,17 +15,15 @@ export function shellQuote(value: string): string {
 }
 
 /**
- * Render a request as a runnable curl command. Base URL, credentials and the
- * device header mirror what the axios interceptor attaches, so the command is
- * the request the UI would send.
+ * Render a request as a runnable curl command. The URL and the device header
+ * mirror what the axios interceptor attaches, so the command is the request the
+ * UI would send. The address is the page's own origin — the proxy the operator
+ * already reached this dashboard through, never the backend behind it.
  */
 export function toCurl(request: ApiRequest, opts: CurlOptions): string {
-  const parts = [`curl -X ${request.method} ${shellQuote(joinUrl(opts.baseUrl, request.path))}`]
+  const url = opts.origin ? absoluteApiUrl(request.path, opts.origin) : absoluteApiUrl(request.path)
+  const parts = [`curl -X ${request.method} ${shellQuote(url)}`]
 
-  if (opts.username && opts.password) {
-    const password = opts.revealSecrets ? opts.password : MASK
-    parts.push(`-u ${shellQuote(`${opts.username}:${password}`)}`)
-  }
   if (opts.deviceId) {
     parts.push(`-H ${shellQuote(`X-Device-Id: ${encodeURIComponent(opts.deviceId)}`)}`)
   }
