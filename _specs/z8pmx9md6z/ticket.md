@@ -9,7 +9,7 @@ created_at: 2026-09-06
 updated_at: 2026-09-06
 links:
   clickup: "https://app.clickup.com/t/z8pmx9md6z"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/3"
 ---
 
 # Ticket: 3 · Replace the connect screen with JWT login, logout and a route guard

@@ -9,7 +9,7 @@ created_at: 2026-09-05
 updated_at: 2026-09-05
 links:
   clickup: "https://app.clickup.com/t/z8pmx9md6y"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/2"
 ---
 
 # Ticket: 2 · Build the single-source-of-truth auth session store on cookies

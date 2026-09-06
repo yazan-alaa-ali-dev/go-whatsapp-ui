@@ -9,7 +9,7 @@ created_at: 2026-09-06
 updated_at: 2026-09-06
 links:
   clickup: "https://app.clickup.com/t/z8pmx9md70"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/4"
 ---
 
 # Ticket: 4 · Add silent refresh, 401 recovery and token rotation

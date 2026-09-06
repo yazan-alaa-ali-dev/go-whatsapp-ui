@@ -1,8 +1,11 @@
 import type { ApiError } from '@/api/types'
+import { toApiError } from '@/lib/api-error'
 import type { SessionEndReason } from '@/stores/auth'
 
 /**
- * Every sentence the sign-in screen can say, in one file.
+ * Every sentence this app says about who you are and what you may do, in one
+ * file — the sign-in screen's copy, the notice about a session that ended, the
+ * two connection diagnoses, and the one sentence a 403 gets.
  *
  * The reference's error catalogue (§02) is a fixed table and the ticket's
  * acceptance criteria are that table restated, so it is mapped here as data
@@ -84,9 +87,16 @@ const NETWORK: Notice = {
     'The request failed before the server answered it. Check that the backend is running and that the proxy in front of this page forwards /api to it.',
 }
 
-function serverMessage(message: string): string {
+/**
+ * Cap text this app did not write, and say what to do when there is none.
+ *
+ * The empty case is the caller's because the two callers are on different
+ * screens: a sign-in that failed says one thing, a rejected action says
+ * another, and a 403 whose body said nothing wants no trailing detail at all.
+ */
+function serverMessage(message: string, whenEmpty: string): string {
   const trimmed = message.trim()
-  if (!trimmed) return 'The server refused the sign-in without saying why.'
+  if (!trimmed) return whenEmpty
   if (trimmed.length <= MAX_SERVER_MESSAGE) return trimmed
   return `${trimmed.slice(0, MAX_SERVER_MESSAGE)}…`
 }
@@ -126,7 +136,11 @@ export function toLoginError(error: ApiError): LoginError {
   }
   if (error.status === 503) return { kind: 'busy', ...BUSY }
 
-  return { kind: 'unknown', title: 'Sign-in failed', description: serverMessage(error.message) }
+  return {
+    kind: 'unknown',
+    title: 'Sign-in failed',
+    description: serverMessage(error.message, 'The server refused the sign-in without saying why.'),
+  }
 }
 
 /**
@@ -166,4 +180,50 @@ export const CONNECTION_NOTICES: Record<'unreachable' | 'unauthorized', Notice> 
     description:
       'The backend answered the health check by refusing it. The server, or the proxy in front of it, has to accept requests coming from this origin.',
   },
+}
+
+/**
+ * What a 403 says. The reference's §02 table describes the row as
+ * "authenticated, but without sufficient permission — better to hide the button
+ * in the first place", which is what `<Can>` is for; this is what the user sees
+ * when the button could not be hidden, or when the server disagrees with what
+ * the UI believed.
+ */
+export const PERMISSION_DENIED: Notice = {
+  title: "You don't have permission for this action",
+  description:
+    'Your account is signed in, but it is not allowed to do this. An administrator can grant the permission; nothing is wrong with your session.',
+}
+
+/** What a failed action says when the server explained nothing. */
+const NO_SERVER_DETAIL = 'The request failed and the server did not say why.'
+
+/**
+ * The message a failed action shows.
+ *
+ * **A 403 is a permission rejection, not an identity one.** It is not a
+ * malfunction, it is not a session ending, and — provably, in
+ * `src/lib/http.ts` and its tests — it spends no refresh and triggers no
+ * logout. So it gets a sentence that says so instead of whatever the server
+ * wrote, which on this route is usually a bare "forbidden".
+ *
+ * **But the server's text is kept, not replaced.** A 403 is not necessarily
+ * gowa's: a WAF, a reverse proxy or an origin refusal answers 403 too, and
+ * reporting that as an account-permission problem while discarding the only
+ * diagnostic anyone has would make the real cause unfindable. §02 gives the 403
+ * row **no error code** — its code column is literally `—` — so unlike
+ * `toLoginError`, which distinguishes an `AUTH_*` code from a gateway's 503,
+ * there is nothing here to key on. Keeping the text is what remains, and it is
+ * enough: the sentence orients the user, the detail tells an operator whether
+ * the request ever reached gowa.
+ *
+ * Both arms are capped at `MAX_SERVER_MESSAGE`. Any intermediary in front of
+ * gowa can choose that text, and this module already caps it for the login
+ * screen; a toast is no different.
+ */
+export function toActionErrorMessage(error: unknown): string {
+  const apiError = toApiError(error)
+  if (apiError.status !== 403) return serverMessage(apiError.message, NO_SERVER_DETAIL)
+  const detail = serverMessage(apiError.message, '')
+  return detail ? `${PERMISSION_DENIED.title}. ${detail}` : PERMISSION_DENIED.title
 }

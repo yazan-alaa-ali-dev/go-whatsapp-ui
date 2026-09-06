@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { toApiError } from '@/lib/api-error'
+import { toActionErrorMessage } from '@/lib/auth-messages'
 
 /**
  * Wraps a mutation with the standard toast-on-success/error behaviour used by
@@ -24,6 +24,9 @@ export function useActionMutation<TData, TVars>(
       toast.success(message)
       options?.onSuccess?.(data, vars)
     },
-    onError: (error) => toast.error(toApiError(error).message),
+    // Not `toApiError(error).message`: a 403 is a permission rejection rather
+    // than a malfunction, and says so — while keeping whatever the server
+    // wrote, because a 403 from a proxy is not one from gowa (z8pmx9md71).
+    onError: (error) => toast.error(toActionErrorMessage(error)),
   })
 }

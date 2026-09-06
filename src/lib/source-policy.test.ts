@@ -31,6 +31,21 @@ function stripComments(source: string): string {
 }
 
 /**
+ * Strip the JSX `role` attribute before the role rule looks at anything.
+ *
+ * ARIA is the only legitimate reason a shipped file names `role` without it
+ * being an authorization decision — `role="alert"`, `role="button"`. Removing
+ * the attribute form is what lets the rule below ban the *field* outright
+ * instead of chasing comparison shapes, which is the only version of the rule
+ * that survives `const { role } = user` and `ROLE_CAPS[user.role]`.
+ *
+ * Like `stripComments`, it can only ever remove text — never hide added code.
+ */
+function stripAriaRole(source: string): string {
+  return source.replace(/\brole\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g, ' ')
+}
+
+/**
  * Glob keys are relative to this file, so `./curl.ts` and `../api/auth.ts` both
  * arrive; they are normalised to repository paths because that is what a rule
  * violation has to name for the message to be actionable.
@@ -45,7 +60,7 @@ function toRepoPath(key: string): string {
 const SOURCES: [string, string][] = Object.entries(MODULES)
   .map(([key, source]): [string, string] => [toRepoPath(key), source])
   .filter(([path]) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
-  .map(([path, source]): [string, string] => [path, stripComments(source)])
+  .map(([path, source]): [string, string] => [path, stripAriaRole(stripComments(source))])
   .sort(([a], [b]) => a.localeCompare(b))
 
 function offenders(pattern: RegExp, allowed: string[] = []): string[] {
@@ -201,12 +216,106 @@ describe('the credential the login form handles (z8pmx9md6z, AC-25)', () => {
 describe('nothing decodes what the server owns (AC-15, AC-16)', () => {
   it('RULE: no JWT is decoded in the UI — the server rebuilds role and permissions per request', () => {
     expect(
-      offenders(/\batob\s*\(|jwt-decode|jwtDecode|jose/),
-      'account_id, epoch and sub come from GET /auth/me or not at all',
+      // Widened for z8pmx9md71: the original four names cover the libraries a
+      // developer would reach for and none of the ways somebody would hand-roll
+      // it. Verified free — src/ contains zero occurrences of the three added
+      // names — so this costs nothing and closes AC-7 rather than half of it.
+      offenders(
+        /\batob\s*\(|jwt-decode|jwtDecode|jose|base64|Buffer\s*\.\s*from|TextDecoder/,
+      ),
+      'account_id, epoch and permissions come from GET /auth/me or not at all',
     ).toEqual([])
   })
 
   it('RULE: the refresh token is opaque and nothing may take it apart', () => {
     expect(offenders(/refresh_token\s*\.\s*split|decode\w*\(\s*\w*refresh/i)).toEqual([])
+  })
+})
+
+describe('rights come from permissions[], never from a role name (z8pmx9md71)', () => {
+  it('RULE: no shipped file names `role` or `roles` outside the five that only display one', () => {
+    // The reference's golden rule (§04) and its own list of common traps (§11):
+    // permissions are compile-time constants, roles are database rows an
+    // operator can compose without a redeploy — so a role name is not a fact
+    // this UI may reason about.
+    //
+    // The rule matches the FIELD, not a comparison. An earlier draft matched
+    // `.role ===`, `.role !==`, `roles.includes` and equality against the three
+    // seeded names; review pointed out what that misses — `const { role } =
+    // user` (no dot), `switch (user.role)`, `==`, `user.role.startsWith(…)`,
+    // and above all a lookup table `ROLE_CAPS[user.role]` or
+    // `ADMIN_ROLES.includes(user.role)`, which is exactly the role-derivation
+    // §04 forbids and which no comparison pattern can see. Naming the field is
+    // the one thing none of those can avoid.
+    //
+    // ARIA is stripped first (`stripAriaRole`), so `role="alert"` and
+    // `role="button"` are not offences and a new one never will be.
+    expect(
+      offenders(/\brole\b|\broles\b/, [
+        // The wire type: /auth/me answers with `role` and `roles[]`, and the
+        // interface has to say so. Nothing reads them for a decision.
+        'src/api/auth.ts',
+        // A newsletter *viewer* role — an unrelated field that happens to share
+        // the word, rendered as text.
+        'src/api/newsletter.ts',
+        'src/features/newsletter/newsletter-list.tsx',
+        // diagnostics() reports the role as identity, in output meant for a
+        // human reading a support ticket.
+        'src/stores/auth.ts',
+        // The user menu renders it as identity, next to the username.
+        'src/components/layout/user-menu.tsx',
+      ]),
+      'decide from permissions[] — see src/lib/permissions.ts; a role name is not authority',
+    ).toEqual([])
+  })
+
+  it('RULE: `permissions` is read off the principal in one layer and copied nowhere', () => {
+    // AC-8: one source of truth. A component reading `user.permissions`
+    // directly is the second copy, and the moment the two disagree the
+    // disagreement is an authorization bug.
+    //
+    // Three spellings, because review showed the narrow `.permissions` form is
+    // evaded by `const { permissions } = user` and by `user['permissions']`.
+    // Case-sensitive on purpose: the PERMISSIONS catalogue and NO_PERMISSIONS
+    // are constants, not reads of the principal. Prose is unaffected — English
+    // does not end the word with `,` or `}`, which is why the bare-word form
+    // this replaced would have failed on auth-messages.ts's own sign-out copy
+    // ("Your permissions were updated") the day it was written.
+    expect(
+      offenders(/\.permissions\b|\bpermissions\s*[,}]|\[\s*['"]permissions['"]\s*\]/, [
+        'src/api/auth.ts',
+        'src/stores/auth.ts',
+        'src/lib/permissions.ts',
+        'src/hooks/use-permissions.ts',
+      ]),
+      'read it through @/hooks/use-permissions — one reader, one copy',
+    ).toEqual([])
+  })
+
+  it('RULE: a permission check and a redaction check are different authorities and may not import each other', () => {
+    // `hasField(m, 'sent_by')` reads like "I hold messages.origin.read" and is
+    // not: it is a statement about one payload, from one request. Masking is
+    // key deletion with no 403 attached (§09), so presence must never gate an
+    // action. The module boundary is the cheapest control on that confusion,
+    // and it is only a control if it is enforced.
+    const [, permissions] = SOURCES.find(([path]) => path === 'src/lib/permissions.ts')!
+    const [, redaction] = SOURCES.find(([path]) => path === 'src/lib/redaction.ts')!
+
+    expect(/from\s+['"][^'"]*redaction['"]/.test(permissions)).toBe(false)
+    expect(/from\s+['"][^'"]*permissions['"]/.test(redaction)).toBe(false)
+  })
+
+  it('RULE: the two files a later ticket opens say that hiding is not enforcement', () => {
+    // NFR-5. The sentence exists so nobody reads `<Can>` as a security control;
+    // a sentence only in spec.md is a sentence nobody will meet. Asserted on
+    // the raw sources, because it lives in a comment.
+    for (const path of ['src/lib/permissions.ts', 'src/components/shared/can.tsx']) {
+      const source = MODULES[path.replace('src/', '../')] ?? MODULES[path.replace('src/lib/', './')]
+      expect(source, `${path} should be in the module graph`).toBeTypeOf('string')
+      expect(source, `${path} must state that hiding is an affordance, not enforcement`).toMatch(
+        /affordance, never enforcement/,
+      )
+      expect(source).toMatch(/server is the only authority/)
+    }
   })
 })
