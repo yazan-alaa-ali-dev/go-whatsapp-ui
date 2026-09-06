@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { backoffDelay } from '@/lib/backoff'
 import { emitWsEvent, type WsEvent } from '@/lib/events'
 import { toWebSocketUrl } from '@/lib/url'
-import { useConnection } from '@/stores/connection'
+import { useAuth } from '@/stores/auth'
 import { useDeviceStore } from '@/stores/device'
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected'
@@ -28,16 +28,24 @@ class WsClient {
   /** A URL whose handshake was refused often enough to stop trying. */
   private abandonedUrl: string | null = null
 
-  /** Reconcile the socket with the current connection + device selection. */
+  /** Reconcile the socket with the current session + device selection. */
   sync(): void {
-    const { status } = useConnection.getState()
-    const deviceId = useDeviceStore.getState().selectedDeviceId
-
-    if (status !== 'connected') {
+    // /ws is a guarded route, so a socket without a session is a handshake the
+    // server will refuse. The session replaced the health probe as this gate:
+    // the socket's own handshake is a better liveness signal than a separate
+    // request, and gating on the probe would keep a signed-in user socketless
+    // wherever /health is not proxied.
+    if (useAuth.getState().status !== 'authenticated') {
+      // A session ending is the one event that can change whether a refused
+      // handshake would be refused again, so the abandonment is forgotten here
+      // — on the way out, so the budget is one per session rather than one per
+      // tab, and repeated writes while anonymous only hit an idempotent stop().
+      this.abandonedUrl = null
       this.stop()
       return
     }
 
+    const deviceId = useDeviceStore.getState().selectedDeviceId
     const url = toWebSocketUrl({ device_id: deviceId ?? '' })
     if (url === this.abandonedUrl) return
     if (url === this.url && this.desired) return
@@ -51,6 +59,12 @@ class WsClient {
   }
 
   stop(): void {
+    // Nothing to stop. Worth the early return because sync() now runs on every
+    // auth-store write, and each one would otherwise notify every subscriber of
+    // useWsStore with a status they already have.
+    if (!this.desired && this.socket === null && this.reconnectTimer === null) {
+      if (useWsStore.getState().status === 'disconnected') return
+    }
     this.desired = false
     this.url = ''
     this.clearTimer()

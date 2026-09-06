@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useConnection } from '@/stores/connection'
+import { useAuth } from '@/stores/auth'
 import { useDeviceStore } from '@/stores/device'
 import { useWsStore, wsClient } from './ws'
 
@@ -55,7 +55,7 @@ beforeEach(() => {
     clearTimeout: (id: number) => globalThis.clearTimeout(id),
     location: { protocol: 'http:', host: 'localhost:5173' },
   })
-  useConnection.setState({ status: 'connected' })
+  useAuth.setState({ status: 'authenticated' })
   useDeviceStore.setState({ selectedDeviceId: null })
 })
 
@@ -73,11 +73,11 @@ describe('wsClient.sync', () => {
     expect(url).not.toMatch(/authorization/i)
   })
 
-  it('stops the socket when the connection is not connected', () => {
+  it('stops the socket when the session ends', () => {
     wsClient.sync()
     expect(FakeSocket.instances).toHaveLength(1)
 
-    useConnection.setState({ status: 'unreachable' })
+    useAuth.setState({ status: 'anonymous' })
     wsClient.sync()
     expect(useWsStore.getState().status).toBe('disconnected')
   })
@@ -98,7 +98,7 @@ describe('a handshake the server refuses', () => {
     const attempts = FakeSocket.instances.length
 
     // App.tsx re-runs sync() on every store set, selector-free.
-    useConnection.setState({ status: 'connected' })
+    useDeviceStore.setState({ selectedDeviceId: null })
     wsClient.sync()
     wsClient.sync()
 
@@ -130,5 +130,69 @@ describe('a socket that opened and then dropped', () => {
     // runs until the guard stops it rather than giving up on its own.
     expect(FakeSocket.instances.length).toBeGreaterThanOrEqual(RUNAWAY_GUARD)
     expect(useWsStore.getState().status).not.toBe('disconnected')
+  })
+})
+
+describe('the socket requires a session (AC-19)', () => {
+  it('opens nothing while the session is anonymous', () => {
+    // /ws is a guarded route. A socket without a session is a handshake the
+    // server will refuse, so it is not attempted.
+    useAuth.setState({ status: 'anonymous' })
+
+    wsClient.sync()
+
+    expect(FakeSocket.instances).toHaveLength(0)
+    expect(useWsStore.getState().status).toBe('disconnected')
+  })
+
+  it('opens nothing while the session is still unknown', () => {
+    useAuth.setState({ status: 'unknown' })
+    wsClient.sync()
+    expect(FakeSocket.instances).toHaveLength(0)
+  })
+
+  it('closes an open socket when the session ends', () => {
+    wsClient.sync()
+    FakeSocket.instances[0].open()
+    expect(useWsStore.getState().status).toBe('connected')
+
+    // Nobody calls stop(): App.tsx re-runs sync() on every auth-store write,
+    // and sync() reconciles the socket with the session it finds.
+    useAuth.setState({ status: 'anonymous' })
+    wsClient.sync()
+
+    expect(useWsStore.getState().status).toBe('disconnected')
+  })
+
+  it('reopens for the next session after a handshake the server refused', () => {
+    // The regression this exists for: scheduleReconnect() abandons a URL the
+    // server kept refusing, and stop() does not clear that. Without forgetting
+    // it when the session ends, a sign-out followed by a sign-in would open no
+    // socket ever again, and no state change could unblock it.
+    wsClient.sync()
+    drainReconnects()
+    const refused = FakeSocket.instances.length
+    expect(useWsStore.getState().status).toBe('disconnected')
+
+    useAuth.setState({ status: 'anonymous' })
+    wsClient.sync()
+    useAuth.setState({ status: 'authenticated' })
+    wsClient.sync()
+
+    expect(FakeSocket.instances.length).toBeGreaterThan(refused)
+  })
+
+  it('gives each session one attempt budget, not one per store write', () => {
+    wsClient.sync()
+    drainReconnects()
+    const refused = FakeSocket.instances.length
+
+    // Unrelated writes while anonymous must not refill the budget, and must not
+    // reopen anything either.
+    useAuth.setState({ status: 'anonymous' })
+    for (let i = 0; i < 5; i++) wsClient.sync()
+
+    expect(FakeSocket.instances).toHaveLength(refused)
+    expect(useWsStore.getState().status).toBe('disconnected')
   })
 })

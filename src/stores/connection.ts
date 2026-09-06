@@ -13,7 +13,6 @@ const PROBE_TIMEOUT_MS = 5_000
 export interface ConnectionState {
   status: ConnectionStatus
   boot: () => Promise<void>
-  markUnauthorized: () => void
 }
 
 /**
@@ -65,15 +64,11 @@ function clearLegacyStorage(): void {
   }
 }
 
-export const useConnection = create<ConnectionState>()((set, get) => ({
+export const useConnection = create<ConnectionState>()((set) => ({
   status: 'booting',
 
   boot: async () => {
     clearLegacyStorage()
     set({ status: await probeHealth() })
-  },
-
-  markUnauthorized: () => {
-    if (get().status === 'connected') set({ status: 'unauthorized' })
   },
 }))

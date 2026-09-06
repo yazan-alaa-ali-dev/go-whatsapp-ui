@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   LayoutDashboard,
-  Loader2,
   Menu,
   MessagesSquare,
   Send,
@@ -10,17 +9,17 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
-import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { DeviceSwitcher } from '@/components/layout/device-switcher'
 import { Logo } from '@/components/layout/logo'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { UserMenu } from '@/components/layout/user-menu'
 import { WsBadge } from '@/components/layout/ws-badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PasskeyDialog } from '@/features/session/passkey-dialog'
 import { cn } from '@/lib/utils'
-import { useConnection } from '@/stores/connection'
 
 const navGroups = [
   {
@@ -83,22 +82,17 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
+/**
+ * The shell every application route renders inside.
+ *
+ * It no longer gates on anything: reaching it at all means `RequireSession`
+ * already established a session, and the connect screen it used to redirect to
+ * when the health probe failed has been replaced by the login screen, which
+ * carries that diagnosis itself now.
+ */
 export function AppShell() {
-  const status = useConnection((state) => state.status)
   const location = useLocation()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-
-  if (status === 'booting') {
-    return (
-      <div className="flex min-h-svh items-center justify-center">
-        <Loader2 className="text-muted-foreground size-6 animate-spin" />
-      </div>
-    )
-  }
-
-  if (status !== 'connected') {
-    return <Navigate to="/connect" replace />
-  }
 
   return (
     <div className="flex min-h-svh">
@@ -143,6 +137,7 @@ export function AppShell() {
             <DeviceSwitcher />
             <WsBadge />
             <ThemeToggle />
+            <UserMenu />
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
