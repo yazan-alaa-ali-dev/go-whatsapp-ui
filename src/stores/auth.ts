@@ -3,6 +3,7 @@ import {
   fetchMe,
   login,
   logout,
+  refresh,
   type AuthTokenPair,
   type AuthUser,
   type LoginCredentials,
@@ -36,6 +37,69 @@ export type SessionStatus = 'unknown' | 'anonymous' | 'authenticated'
  * write into storage.
  */
 export type SessionEndReason = 'signed-out' | 'expired' | 'permissions-changed'
+
+/**
+ * What one attempt at `POST /auth/refresh` produced (z8pmx9md70). "Failed" is
+ * not one thing, and collapsing these three would be an auth bug either way:
+ *
+ * - `refreshed` — a new pair is held, in the store and in the cookies.
+ * - `ended`     — the server judged the refresh token and refused it, so reuse
+ *                 detection has revoked the whole family. Nothing to retry and
+ *                 nothing to keep; the session is already cleared when this is
+ *                 returned. Also returned, having touched nothing, when there
+ *                 was no token to spend or the session moved on mid-flight.
+ * - `deferred`  — the attempt failed for a reason that says nothing about the
+ *                 token: a 429 from a bucket keyed on the TCP peer, a 5xx, a
+ *                 transport failure. Nothing is torn down here and nothing is
+ *                 retried; what the caller does about it depends on whether the
+ *                 access token is still alive, which only the caller knows.
+ */
+export type RefreshOutcome = 'refreshed' | 'ended' | 'deferred'
+
+/**
+ * The audit record of one attempt. It is deliberately made of a verdict, a
+ * number and a closed vocabulary — the one thing it must never carry is a
+ * token, and the second is text somebody else wrote.
+ */
+export interface RefreshRecord {
+  outcome: 'success' | 'failed'
+  /** HTTP status, or 0 when the request never got an answer. */
+  status: number
+  /** Only a code from the reference's own §02 catalogue; otherwise null. */
+  code: string | null
+  at: string
+}
+
+/**
+ * The error codes §02 defines. `toApiError` fills `code` from the response
+ * envelope when there is one and falls back to `HTTP_ERROR` / `NETWORK_ERROR`
+ * when there is not — so on a public route, in front of which any intermediary
+ * may sit, `code` is attacker-influenceable text. Anything outside this list is
+ * dropped rather than recorded.
+ */
+const CATALOGUE_CODES: ReadonlySet<string> = new Set([
+  'AUTH_REQUIRED',
+  'AUTH_INVALID_CREDENTIALS',
+  'AUTH_INVALID_REFRESH_TOKEN',
+  'AUTH_RATE_LIMITED',
+  'AUTH_NOT_CONFIGURED',
+  'AUTH_BUSY',
+  'MALFORMED_TOKEN_PAIR',
+])
+
+/**
+ * The one in-flight `POST /auth/refresh`, or null.
+ *
+ * Module scope rather than store state on purpose: it is not something a
+ * component may render or a test may set, and putting a promise in a zustand
+ * store would make every subscriber re-run when it settles.
+ *
+ * It is nulled in a `finally` and again in `clearSession`. Both matter. Without
+ * the `finally` the promise is created once, settles, and is then handed to
+ * every later caller forever: the page would refresh exactly once, and every
+ * request after the second rotation would be replayed with a dead token.
+ */
+let inFlight: Promise<RefreshOutcome> | null = null
 
 /**
  * How much the browser's clock is allowed to disagree with the server's before
@@ -88,6 +152,7 @@ export interface SessionDiagnostics {
   hasAccessToken: boolean
   hasRefreshToken: boolean
   accessTokenExpiresAt: string | null
+  lastRefresh: RefreshRecord | null
   user: { user_id: string; username: string; role: string; permissionCount: number } | null
 }
 
@@ -100,12 +165,16 @@ export interface AuthState {
   status: SessionStatus
   /** Set by whatever ended the session; read once by the login screen. */
   endReason: SessionEndReason | null
+  /** The last refresh attempt, as an outcome. Never a token. */
+  lastRefresh: RefreshRecord | null
 
   storeTokenPair: (pair: AuthTokenPair) => void
   signIn: (credentials: LoginCredentials) => Promise<void>
   signOut: () => void
+  refreshSession: () => Promise<RefreshOutcome>
+  recordRefresh: (outcome: RefreshRecord['outcome'], status: number, code: string | null) => void
   endSession: (reason: SessionEndReason) => void
-  endRefusedSession: () => void
+  endRefusedSession: (reason?: SessionEndReason) => void
   clearSession: (reason?: SessionEndReason) => void
   consumeEndReason: () => SessionEndReason | null
   boot: () => Promise<void>
@@ -137,6 +206,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   user: null,
   status: 'unknown',
   endReason: null,
+  lastRefresh: null,
 
   /**
    * The only conversion of `expires_in` in the codebase: seconds, describing
@@ -209,9 +279,80 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   /**
+   * Rotate the pair. The single place `POST /auth/refresh` is called from.
+   *
+   * **Single-flight.** Every caller that arrives while one is in the air gets
+   * that same promise, which is what makes five concurrent 401s cost one POST
+   * (AC-11) and what stops the proactive schedule racing the reactive path.
+   * There is exactly one dedupe mechanism in this feature and this is it.
+   *
+   * **The identity check is the security property.** The presented token is
+   * always spent server-side, and the answer can arrive after the session that
+   * owned it is gone: a `signOut()` landing mid-flight would otherwise be
+   * *undone* here — both cookies rewritten, a refresh token put back, the
+   * sign-out notice erased, and the status flipped back to authenticated for a
+   * user who pressed Log out. So the token that was spent must still be the
+   * token the store holds, or the pair is dropped unwritten. A teardown nulls
+   * it; a new sign-in replaces it; either way this is no longer our session.
+   */
+  refreshSession: async () => {
+    if (inFlight) return inFlight
+
+    const spent = get().refresh_token
+    if (!spent) {
+      // Nothing was spent, so nothing is torn down: deciding what a session
+      // with no refresh token means belongs to the caller, and getting that
+      // wrong here would overwrite a deliberate sign-out's notice.
+      get().recordRefresh('failed', 0, null)
+      return 'ended'
+    }
+
+    inFlight = (async (): Promise<RefreshOutcome> => {
+      try {
+        const pair = await refresh(spent)
+        if (get().refresh_token !== spent) return 'ended'
+        get().storeTokenPair(pair)
+        get().recordRefresh('success', 200, null)
+        return 'refreshed'
+      } catch (error) {
+        const { status, code } = toApiError(error)
+        get().recordRefresh('failed', status, code)
+        // The two ways the server says "this token is dead". Anything else —
+        // 429 from a bucket keyed on the TCP peer, a 5xx, a socket that never
+        // answered — is not a verdict on the token and must not be read as one.
+        const refused = status === 401 || code === 'AUTH_INVALID_REFRESH_TOKEN'
+        if (!refused) return 'deferred'
+        if (get().refresh_token === spent) {
+          // Read the reason before clearSession wipes the expiry it is computed
+          // from. A live access token refused alongside its refresh token is
+          // what a token_epoch bump looks like.
+          get().clearSession(refusalReason(get().access_token_expires_at))
+        }
+        return 'ended'
+      } finally {
+        inFlight = null
+      }
+    })()
+
+    return inFlight
+  },
+
+  /** Audit, never a value: an outcome, a status number, and a closed code set. */
+  recordRefresh: (outcome, status, code) => {
+    set({
+      lastRefresh: {
+        outcome,
+        status,
+        code: code !== null && CATALOGUE_CODES.has(code) ? code : null,
+        at: new Date().toISOString(),
+      },
+    })
+  },
+
+  /**
    * The **involuntary** teardown: a token was refused or ran out. The access
    * token goes and the refresh token stays — deliberately, because it is the
-   * credential z8pmx9md70 will use to recover, and because `POST /auth/logout`
+   * credential the refresh path recovers with, and because `POST /auth/logout`
    * would revoke the whole family for an event the user did not ask for.
    */
   endSession: (reason) => {
@@ -235,13 +376,22 @@ export const useAuth = create<AuthState>()((set, get) => ({
    * request — so it is a no-op, which is also what absorbs the burst of refetch
    * 401s a cache teardown can produce before the guard unmounts the tree.
    */
-  endRefusedSession: () => {
+  endRefusedSession: (reason) => {
     const { status, access_token_expires_at } = get()
     if (status !== 'authenticated') return
-    get().endSession(refusalReason(access_token_expires_at))
+    // With a reason, the caller knows something this store cannot infer. The
+    // reactive path uses that for a refresh that failed on a 429 or a 5xx: the
+    // server judged nothing there, and inferring `permissions-changed` from a
+    // still-live access token would tell a user an administrator changed their
+    // account because somebody else exhausted a shared rate-limit bucket.
+    get().endSession(reason ?? refusalReason(access_token_expires_at))
   },
 
   clearSession: (reason = 'signed-out') => {
+    // A refresh in the air belongs to the session being torn down. Dropping the
+    // reference lets the next session start its own; the identity check in
+    // refreshSession is what stops the old one writing anything when it lands.
+    inFlight = null
     clearAccess()
     removeCookie(REFRESH_COOKIE)
     set({
@@ -286,9 +436,15 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const expired = expiresAt !== null && expiresAt <= Date.now()
 
     if (!accessToken || expired) {
-      // An expired access cookie buys nothing but a guaranteed 401. Drop it and
-      // leave the refresh token alone — recovering from this is z8pmx9md70's.
+      // An expired access cookie buys nothing but a guaranteed 401. Drop it,
+      // keep the refresh token, and spend it — this is the recovery the
+      // previous ticket deferred to this one.
       if (expired) clearAccess()
+      // This write happens BEFORE any await, and that ordering is the whole
+      // StrictMode latch: `status` stops being 'unknown' here, so React's second
+      // invocation of the boot effect returns at the guard above instead of
+      // issuing a second refresh and a second GET /auth/me. Do not move an
+      // await above this line.
       set({
         access_token: null,
         refresh_token: refreshToken,
@@ -296,14 +452,18 @@ export const useAuth = create<AuthState>()((set, get) => ({
         user: null,
         status: 'anonymous',
       })
-      return
+      if (!refreshToken) return
+      // `ended` has already cleared the session; `deferred` leaves the refresh
+      // token in place, and the next reload tries again. Either way there is no
+      // access token to ask /auth/me with, so there is nothing more to do here.
+      if ((await get().refreshSession()) !== 'refreshed') return
+    } else {
+      set({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        access_token_expires_at: expiresAt,
+      })
     }
-
-    set({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      access_token_expires_at: expiresAt,
-    })
 
     try {
       const user = await fetchMe()
@@ -331,13 +491,15 @@ export const useAuth = create<AuthState>()((set, get) => ({
    * never which one. No token value can reach this output.
    */
   diagnostics: () => {
-    const { status, access_token, refresh_token, access_token_expires_at, user } = get()
+    const { status, access_token, refresh_token, access_token_expires_at, user, lastRefresh } =
+      get()
     return {
       status,
       hasAccessToken: access_token !== null,
       hasRefreshToken: refresh_token !== null,
       accessTokenExpiresAt:
         access_token_expires_at === null ? null : new Date(access_token_expires_at).toISOString(),
+      lastRefresh,
       user: user
         ? {
             user_id: user.user_id,

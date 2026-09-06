@@ -114,8 +114,22 @@ describe('the store is the only session owner (AC-1, AC-2, AC-10)', () => {
   })
 
   it('RULE: the access token is named only where it is owned, fetched or attached', () => {
+    // `\b...\b` rather than a bare substring (z8pmx9md70): `access_token` and
+    // `access_token_expires_at` are different facts. The expiry is a clock, not
+    // a credential, and the refresh scheduler reads it — exempting a file for
+    // naming an expiry would have widened this rule instead of narrowing it.
+    // The word boundary does not match before `_`, so the expiry is excluded
+    // and the token itself is still caught everywhere.
     expect(
-      offenders(/access_token/, ['src/stores/auth.ts', 'src/api/auth.ts', 'src/lib/http.ts']),
+      offenders(/\baccess_token\b/, [
+        'src/stores/auth.ts',
+        'src/api/auth.ts',
+        'src/lib/http.ts',
+        // The browser cannot set a header on a WebSocket handshake, so the
+        // token travels in the query string — the server's own instruction
+        // (reference §10). This is the "attached" case, one transport over.
+        'src/lib/ws.ts',
+      ]),
       'read the token from useAuth.getState(), never from storage or a second copy',
     ).toEqual([])
   })
@@ -126,6 +140,19 @@ describe('no token reaches a log, a URL or a rendered command (AC-18)', () => {
     expect(
       offenders(/\bBearer\b/, ['src/lib/http.ts', 'src/lib/curl.ts']),
       'http.ts attaches the real header; curl.ts renders a valueless <token> placeholder',
+    ).toEqual([])
+  })
+
+  it('RULE: nothing in src/ writes to the console at all (z8pmx9md70, AC-29)', () => {
+    // The narrower rule — "a token near a console call" — was rejected at
+    // review: it cannot see `console.log(pair)`, `console.log(getState())` or a
+    // template built from a variable, so it would have guarded AC-29 in name
+    // only. The shipped source contains zero console calls, so the flat ban is
+    // both airtight and free, and its exemption list is empty on purpose. A
+    // refresh outcome is recorded in the store and read through diagnostics().
+    expect(
+      offenders(/\bconsole\s*\./),
+      'no token may reach a log; the audited output is useAuth.getState().diagnostics()',
     ).toEqual([])
   })
 

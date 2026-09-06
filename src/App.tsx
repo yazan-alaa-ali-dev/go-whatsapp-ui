@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
 import { RequireSession } from '@/components/layout/require-session'
 import { onWsEvent } from '@/lib/events'
+import { sessionRefresh } from '@/lib/session-refresh'
 import { LOGIN_PATH } from '@/lib/session-route'
 import { wsClient } from '@/lib/ws'
 import { useAuth } from '@/stores/auth'
@@ -33,16 +34,23 @@ function useBootstrap() {
 
   useEffect(() => {
     wsClient.sync()
-    // The socket is reconciled from state, never commanded: sync() reads the
-    // session and the device selection, so ending a session closes the socket
-    // without anybody calling stop(). useConnection is no longer one of its
-    // inputs, so it is no longer one of its triggers either.
-    const unsubscribeAuth = useAuth.subscribe(() => wsClient.sync())
+    sessionRefresh.sync()
+    // Both are reconciled from state, never commanded: each reads the session
+    // and disarms itself when there is none, so ending a session closes the
+    // socket and cancels the renewal without anybody calling a teardown. The
+    // renewal is subscribed here rather than to a timer of its own because the
+    // event that re-arms it — a rotation writing a new expiry — is a store
+    // write like any other. useConnection is not one of their inputs.
+    const unsubscribeAuth = useAuth.subscribe(() => {
+      wsClient.sync()
+      sessionRefresh.sync()
+    })
     const unsubscribeDevice = useDeviceStore.subscribe(() => wsClient.sync())
     return () => {
       unsubscribeAuth()
       unsubscribeDevice()
       wsClient.stop()
+      sessionRefresh.stop()
     }
   }, [])
 
