@@ -93,6 +93,34 @@ export async function login(credentials: LoginCredentials): Promise<AuthTokenPai
 }
 
 /**
+ * Rotate the pair. Public and body-only, like `login()`, and for the same
+ * reason: it authenticates from the token in its body and reads no principal,
+ * so it works precisely when the access token no longer does.
+ *
+ * Rotation is destructive on the server side (reference §03): **the presented
+ * token is always spent**, whatever this function does with the answer, and the
+ * replacement is issued in the same family. Presenting a spent token is read as
+ * evidence the lineage is compromised and revokes the family — which is why the
+ * caller is `src/stores/auth.ts` and only `src/stores/auth.ts`, behind a
+ * single-flight promise. There is no safe way to call this twice with one token.
+ */
+export async function refresh(refresh_token: string): Promise<AuthTokenPair> {
+  const pair = await results<unknown>(http.post('/auth/refresh', { refresh_token }))
+  if (!isAuthTokenPair(pair)) {
+    // A 200 carrying an empty envelope would otherwise be stored as a session
+    // made of `undefined` — and the token that was just spent is already gone,
+    // so there is nothing to fall back to. Fail loudly.
+    const malformed: ApiError = {
+      status: 0,
+      code: 'MALFORMED_TOKEN_PAIR',
+      message: 'POST /auth/refresh answered without a token pair',
+    }
+    throw malformed
+  }
+  return pair
+}
+
+/**
  * Revokes the whole refresh-token family. Public and body-only on purpose — it
  * reads no principal — so a session whose access token has already died can
  * still revoke a refresh token with 30 days left on it.

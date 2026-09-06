@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMe, login, logout, type AuthUser } from '@/api/auth'
+import { fetchMe, login, logout, refresh, type AuthTokenPair, type AuthUser } from '@/api/auth'
+import type { ApiError } from '@/api/types'
 import { refusalReason, useAuth } from './auth'
 
-vi.mock('@/api/auth', () => ({ fetchMe: vi.fn(), login: vi.fn(), logout: vi.fn() }))
+vi.mock('@/api/auth', () => ({
+  fetchMe: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
+  refresh: vi.fn(),
+}))
 
 const ACCESS = 'gowa-ui.access.v1'
 const REFRESH = 'gowa-ui.refresh.v1'
@@ -54,6 +60,7 @@ beforeEach(() => {
     user: null,
     status: 'unknown',
     endReason: null,
+    lastRefresh: null,
   })
 })
 
@@ -62,6 +69,7 @@ afterEach(() => {
   vi.mocked(fetchMe).mockReset()
   vi.mocked(login).mockReset()
   vi.mocked(logout).mockReset()
+  vi.mocked(refresh).mockReset()
 })
 
 describe('storeTokenPair', () => {
@@ -535,5 +543,421 @@ describe('the sign-out reason is a notice, not state', () => {
   it('is never written to a cookie', () => {
     useAuth.getState().endSession('permissions-changed')
     expect([...jar.values()].join(' ')).not.toContain('permissions-changed')
+  })
+})
+
+/**
+ * Rotation, and the three things a failed rotation can mean (z8pmx9md70).
+ *
+ * `refresh()` is mocked, so what is measured here is the store's contract: what
+ * it writes, what it refuses to write, how many times it calls out, and which
+ * of the three outcomes it reports. The transport's half is in http.test.ts.
+ */
+describe('refreshSession — rotation and its three outcomes', () => {
+  const ROTATED_ACCESS = 'eyJhbGciOiJIUzI1NiJ9.rotated-payload.signature'
+  const ROTATED_REFRESH = 'Rr9Tk4vB2nQ7wLz1Xc6Ym0Ps3Hd8Jf5Ae2Ou4Ig7N'
+
+  const rotated: AuthTokenPair = {
+    access_token: ROTATED_ACCESS,
+    refresh_token: ROTATED_REFRESH,
+    expires_in: 900,
+  }
+
+  /** A live session holding a pair, as `storeTokenPair` would have left it. */
+  function signedIn(expiresAt = Date.now() + 900_000): void {
+    jar.set(ACCESS, ACCESS_TOKEN)
+    jar.set(REFRESH, REFRESH_TOKEN)
+    useAuth.setState({
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: expiresAt,
+      user: principal,
+      status: 'authenticated',
+      endReason: null,
+      lastRefresh: null,
+    })
+  }
+
+  /** The ApiError shape the interceptor rejects with. */
+  function refused(status: number, code: string): ApiError {
+    return { status, code, message: 'refused' }
+  }
+
+  it('replaces both halves of the pair, in the store and in the cookies (AC-14)', async () => {
+    signedIn()
+    vi.mocked(refresh).mockResolvedValue(rotated)
+
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('refreshed')
+
+    expect(vi.mocked(refresh)).toHaveBeenCalledWith(REFRESH_TOKEN)
+    expect(useAuth.getState().access_token).toBe(ROTATED_ACCESS)
+    expect(useAuth.getState().refresh_token).toBe(ROTATED_REFRESH)
+    expect(jar.get(ACCESS)).toBe(ROTATED_ACCESS)
+    expect(jar.get(REFRESH)).toBe(ROTATED_REFRESH)
+    // expires_in is converted exactly once, on write, and never kept as seconds.
+    expect(useAuth.getState().access_token_expires_at).toBeGreaterThan(Date.now() + 890_000)
+  })
+
+  it('spends the new refresh token on the next rotation, never the old one (AC-15)', async () => {
+    signedIn()
+    vi.mocked(refresh).mockResolvedValue(rotated)
+    await useAuth.getState().refreshSession()
+
+    vi.mocked(refresh).mockResolvedValue({ ...rotated, access_token: 'third', refresh_token: 'r3' })
+    await useAuth.getState().refreshSession()
+
+    // The server revokes the whole family for a token presented twice, so
+    // re-sending the spent one would end the session rather than renew it.
+    expect(vi.mocked(refresh).mock.calls).toEqual([[REFRESH_TOKEN], [ROTATED_REFRESH]])
+  })
+
+  it('serves every concurrent caller from one request (AC-11)', async () => {
+    signedIn()
+    vi.mocked(refresh).mockResolvedValue(rotated)
+
+    const outcomes = await Promise.all([
+      useAuth.getState().refreshSession(),
+      useAuth.getState().refreshSession(),
+      useAuth.getState().refreshSession(),
+    ])
+
+    expect(outcomes).toEqual(['refreshed', 'refreshed', 'refreshed'])
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the single flight so a later rotation is a new request', async () => {
+    // The defect this exists for: without the `finally`, the settled promise is
+    // handed to every later caller forever — the page refreshes exactly once,
+    // and every request after the next rotation replays with a dead token.
+    signedIn()
+    vi.mocked(refresh).mockResolvedValue(rotated)
+
+    await useAuth.getState().refreshSession()
+    await useAuth.getState().refreshSession()
+    await useAuth.getState().refreshSession()
+
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(3)
+  })
+
+  it('releases it after an unexpected throw too', async () => {
+    signedIn()
+    vi.mocked(refresh).mockRejectedValueOnce(new TypeError('something unforeseen'))
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('deferred')
+
+    vi.mocked(refresh).mockResolvedValue(rotated)
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('refreshed')
+
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears the whole session when the server refuses the refresh token (AC-16)', async () => {
+    signedIn()
+    vi.mocked(refresh).mockRejectedValue(refused(401, 'AUTH_INVALID_REFRESH_TOKEN'))
+
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('ended')
+
+    // Reuse detection has revoked the family: keeping the token would be
+    // keeping a credential that is already dead, and retrying would be sending
+    // a spent token a second time.
+    expect(useAuth.getState().status).toBe('anonymous')
+    expect(useAuth.getState().refresh_token).toBeNull()
+    expect(jar.has(ACCESS)).toBe(false)
+    expect(jar.has(REFRESH)).toBe(false)
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls a live token refused alongside its refresh token a permissions change (AC-20)', async () => {
+    // The reference documents exactly one thing that kills a token that has not
+    // expired: a token_epoch bump from an administrative change — and it kills
+    // the refresh token with it, which is what this pair of failures looks like.
+    signedIn(Date.now() + 900_000)
+    vi.mocked(refresh).mockRejectedValue(refused(401, 'AUTH_INVALID_REFRESH_TOKEN'))
+
+    await useAuth.getState().refreshSession()
+
+    expect(useAuth.getState().endReason).toBe('permissions-changed')
+  })
+
+  it('calls the same refusal on an expired token an expiry', async () => {
+    signedIn(Date.now() - 1_000)
+    vi.mocked(refresh).mockRejectedValue(refused(401, 'AUTH_INVALID_REFRESH_TOKEN'))
+
+    await useAuth.getState().refreshSession()
+
+    expect(useAuth.getState().endReason).toBe('expired')
+  })
+
+  it('tears nothing down for a failure that judged no token (AC-17)', async () => {
+    // 429 is keyed on the TCP peer, so behind a proxy it can be another user's
+    // traffic entirely; a 5xx and a dead socket say nothing either. Deciding
+    // what that means for the session belongs to the caller, which knows
+    // whether the access token is still alive.
+    signedIn()
+    vi.mocked(refresh).mockRejectedValue(refused(429, 'AUTH_RATE_LIMITED'))
+
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('deferred')
+
+    expect(useAuth.getState().status).toBe('authenticated')
+    expect(useAuth.getState().refresh_token).toBe(REFRESH_TOKEN)
+    expect(jar.get(REFRESH)).toBe(REFRESH_TOKEN)
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports `ended` without touching anything when there is no token to spend', async () => {
+    useAuth.setState({ status: 'anonymous', refresh_token: null, endReason: 'signed-out' })
+
+    await expect(useAuth.getState().refreshSession()).resolves.toBe('ended')
+
+    expect(vi.mocked(refresh)).not.toHaveBeenCalled()
+    // Nothing was spent, so nothing is torn down — and in particular the notice
+    // a deliberate sign-out left is not overwritten with "your session expired".
+    expect(useAuth.getState().endReason).toBe('signed-out')
+  })
+})
+
+describe('an in-flight refresh cannot resurrect a session (TC-17)', () => {
+  const rotated: AuthTokenPair = {
+    access_token: 'resurrected-access',
+    refresh_token: 'resurrected-refresh',
+    expires_in: 900,
+    user: principal,
+  }
+
+  it('drops a pair that arrives after the user signed out', async () => {
+    // The hole found at review: the presented token is always spent server-side,
+    // so the answer can land after the session that owned it is gone. Writing it
+    // would undo a sign-out — cookies back, notice erased, status authenticated
+    // again for a user who pressed Log out.
+    jar.set(REFRESH, REFRESH_TOKEN)
+    useAuth.setState({
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: Date.now() + 900_000,
+      user: principal,
+      status: 'authenticated',
+      endReason: null,
+      lastRefresh: null,
+    })
+
+    let land: (pair: AuthTokenPair) => void = () => {}
+    vi.mocked(refresh).mockReturnValue(
+      new Promise<AuthTokenPair>((resolve) => {
+        land = resolve
+      }),
+    )
+
+    const inFlight = useAuth.getState().refreshSession()
+    useAuth.getState().signOut()
+    land(rotated)
+
+    await expect(inFlight).resolves.toBe('ended')
+    expect(useAuth.getState().status).toBe('anonymous')
+    expect(useAuth.getState().access_token).toBeNull()
+    expect(useAuth.getState().refresh_token).toBeNull()
+    expect(useAuth.getState().endReason).toBe('signed-out')
+    expect(jar.has(REFRESH)).toBe(false)
+  })
+
+  it('does not clear a session that replaced the one whose refresh failed', async () => {
+    useAuth.setState({
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: Date.now() + 900_000,
+      user: principal,
+      status: 'authenticated',
+      endReason: null,
+      lastRefresh: null,
+    })
+
+    let reject: (error: unknown) => void = () => {}
+    vi.mocked(refresh).mockReturnValue(
+      new Promise<AuthTokenPair>((_resolve, rejectPromise) => {
+        reject = rejectPromise
+      }),
+    )
+
+    const inFlight = useAuth.getState().refreshSession()
+    // A different session now holds the store — the failure belongs to the old
+    // one and must not tear this one down.
+    useAuth.getState().storeTokenPair({
+      access_token: 'next-access',
+      refresh_token: 'next-refresh',
+      expires_in: 900,
+      user: principal,
+    })
+    reject({ status: 401, code: 'AUTH_INVALID_REFRESH_TOKEN', message: 'refused' })
+
+    await expect(inFlight).resolves.toBe('ended')
+    expect(useAuth.getState().status).toBe('authenticated')
+    expect(useAuth.getState().refresh_token).toBe('next-refresh')
+  })
+})
+
+describe('the refresh record is an outcome, never a value (AC-30)', () => {
+  it('records a success as a verdict and a status', async () => {
+    useAuth.setState({
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: Date.now() + 900_000,
+      status: 'authenticated',
+      lastRefresh: null,
+    })
+    vi.mocked(refresh).mockResolvedValue({
+      access_token: 'a-secret-access-token',
+      refresh_token: 'a-secret-refresh-token',
+      expires_in: 900,
+    })
+
+    await useAuth.getState().refreshSession()
+
+    const serialised = JSON.stringify(useAuth.getState().diagnostics())
+    expect(useAuth.getState().lastRefresh).toMatchObject({ outcome: 'success', status: 200 })
+    expect(serialised).not.toContain('a-secret-access-token')
+    expect(serialised).not.toContain('a-secret-refresh-token')
+  })
+
+  it('keeps a catalogue code and drops anything else the server wrote', async () => {
+    // `code` falls back to the transport's own value, and on a public route any
+    // intermediary may answer — so what is recorded is checked against the
+    // reference's §02 table rather than trusted.
+    useAuth.setState({
+      access_token: ACCESS_TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: Date.now() + 900_000,
+      status: 'authenticated',
+      lastRefresh: null,
+    })
+    vi.mocked(refresh).mockRejectedValueOnce({
+      status: 429,
+      code: 'AUTH_RATE_LIMITED',
+      message: 'slow down',
+    })
+    await useAuth.getState().refreshSession()
+    expect(useAuth.getState().lastRefresh).toMatchObject({
+      outcome: 'failed',
+      status: 429,
+      code: 'AUTH_RATE_LIMITED',
+    })
+
+    vi.mocked(refresh).mockRejectedValueOnce({
+      status: 502,
+      code: '<img src=x onerror=alert(1)>',
+      message: 'gateway says hello',
+    })
+    await useAuth.getState().refreshSession()
+    expect(useAuth.getState().lastRefresh).toMatchObject({ outcome: 'failed', status: 502, code: null })
+    expect(JSON.stringify(useAuth.getState().lastRefresh)).not.toContain('onerror')
+  })
+})
+
+describe('boot recovers a session from the refresh token alone (AC-27, AC-28)', () => {
+  it('spends the refresh token when the access cookie has expired, then fetches the principal', async () => {
+    // The gap z8pmx9md6y left open on purpose: it dropped the dead access
+    // cookie, kept the refresh token, and said recovery belonged here.
+    jar.set(REFRESH, REFRESH_TOKEN)
+    jar.set(ACCESS, ACCESS_TOKEN)
+    jar.set(EXPIRES, String(Date.now() - 1_000))
+    vi.mocked(refresh).mockResolvedValue({
+      access_token: 'recovered-access',
+      refresh_token: 'recovered-refresh',
+      expires_in: 900,
+    })
+    vi.mocked(fetchMe).mockResolvedValue(principal)
+
+    await useAuth.getState().boot()
+
+    expect(vi.mocked(refresh)).toHaveBeenCalledWith(REFRESH_TOKEN)
+    expect(useAuth.getState().status).toBe('authenticated')
+    expect(useAuth.getState().access_token).toBe('recovered-access')
+    expect(useAuth.getState().user).toEqual(principal)
+  })
+
+  it('recovers with no access cookie at all, given a refresh token', async () => {
+    jar.set(REFRESH, REFRESH_TOKEN)
+    vi.mocked(refresh).mockResolvedValue({
+      access_token: 'recovered-access',
+      refresh_token: 'recovered-refresh',
+      expires_in: 900,
+    })
+    vi.mocked(fetchMe).mockResolvedValue(principal)
+
+    await useAuth.getState().boot()
+
+    expect(useAuth.getState().status).toBe('authenticated')
+  })
+
+  it('issues exactly one refresh and one /auth/me under StrictMode double-invocation', async () => {
+    // boot()'s latch is the session state itself, so the write that closes it
+    // has to happen before the first await. Putting the refresh above that
+    // write would let React's second call re-enter and spend a second token —
+    // and spending a refresh token twice revokes the whole family.
+    jar.set(REFRESH, REFRESH_TOKEN)
+    vi.mocked(refresh).mockResolvedValue({
+      access_token: 'recovered-access',
+      refresh_token: 'recovered-refresh',
+      expires_in: 900,
+    })
+    vi.mocked(fetchMe).mockResolvedValue(principal)
+
+    await Promise.all([useAuth.getState().boot(), useAuth.getState().boot()])
+
+    expect(vi.mocked(refresh)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(fetchMe)).toHaveBeenCalledTimes(1)
+  })
+
+  it('lands anonymous with both cookies gone when the refresh token is rejected (AC-28)', async () => {
+    jar.set(REFRESH, REFRESH_TOKEN)
+    jar.set(ACCESS, ACCESS_TOKEN)
+    jar.set(EXPIRES, String(Date.now() - 1_000))
+    vi.mocked(refresh).mockRejectedValue({
+      status: 401,
+      code: 'AUTH_INVALID_REFRESH_TOKEN',
+      message: 'refused',
+    })
+
+    await useAuth.getState().boot()
+
+    expect(useAuth.getState().status).toBe('anonymous')
+    expect(useAuth.getState().refresh_token).toBeNull()
+    expect(jar.has(REFRESH)).toBe(false)
+    expect(vi.mocked(fetchMe)).not.toHaveBeenCalled()
+  })
+
+  it('keeps the refresh token when the renewal failed for a reason that judged nothing', async () => {
+    jar.set(REFRESH, REFRESH_TOKEN)
+    vi.mocked(refresh).mockRejectedValue({ status: 0, code: 'NETWORK_ERROR', message: 'offline' })
+
+    await useAuth.getState().boot()
+
+    expect(useAuth.getState().status).toBe('anonymous')
+    // Nothing here is evidence the token is dead, so the next reload tries again.
+    expect(jar.get(REFRESH)).toBe(REFRESH_TOKEN)
+    expect(vi.mocked(fetchMe)).not.toHaveBeenCalled()
+  })
+
+  it('attempts no refresh when there is no refresh token to spend', async () => {
+    await useAuth.getState().boot()
+
+    expect(vi.mocked(refresh)).not.toHaveBeenCalled()
+    expect(useAuth.getState().status).toBe('anonymous')
+  })
+
+  it('does not spend a refresh token on a boot whose access token is still live', async () => {
+    // An access token inside its lifetime that the server refuses is a
+    // token_epoch bump, and the epoch invalidates the refresh token too — so a
+    // refresh here buys a round-trip to reach the same answer. The access
+    // cookie is dropped and the next reload takes the recovery path above.
+    jar.set(ACCESS, ACCESS_TOKEN)
+    jar.set(REFRESH, REFRESH_TOKEN)
+    jar.set(EXPIRES, String(Date.now() + 900_000))
+    vi.mocked(fetchMe).mockRejectedValue({ status: 401, code: 'AUTH_REQUIRED', message: 'no' })
+
+    await useAuth.getState().boot()
+
+    expect(vi.mocked(refresh)).not.toHaveBeenCalled()
+    expect(useAuth.getState().status).toBe('anonymous')
+    expect(useAuth.getState().endReason).toBe('permissions-changed')
+    // z8pmx9md6y's decision, unchanged: the refresh token survives this.
+    expect(jar.get(REFRESH)).toBe(REFRESH_TOKEN)
   })
 })

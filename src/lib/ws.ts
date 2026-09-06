@@ -25,8 +25,14 @@ class WsClient {
   private desired = false
   private url = ''
   private everOpened = false
-  /** A URL whose handshake was refused often enough to stop trying. */
-  private abandonedUrl: string | null = null
+  /**
+   * The handshake identity the attempt budget is keyed on — the URL **without**
+   * the access token. See `sync()`: keying it on the full URL would hand a
+   * refused `/ws` a fresh budget on every rotation, forever.
+   */
+  private handshakeKey = ''
+  /** A handshake refused often enough to stop trying. */
+  private abandonedKey: string | null = null
 
   /** Reconcile the socket with the current session + device selection. */
   sync(): void {
@@ -35,23 +41,40 @@ class WsClient {
     // the socket's own handshake is a better liveness signal than a separate
     // request, and gating on the probe would keep a signed-in user socketless
     // wherever /health is not proxied.
-    if (useAuth.getState().status !== 'authenticated') {
+    const { status, access_token: token } = useAuth.getState()
+    if (status !== 'authenticated' || !token) {
       // A session ending is the one event that can change whether a refused
       // handshake would be refused again, so the abandonment is forgotten here
       // — on the way out, so the budget is one per session rather than one per
       // tab, and repeated writes while anonymous only hit an idempotent stop().
-      this.abandonedUrl = null
+      this.abandonedKey = null
       this.stop()
       return
     }
 
     const deviceId = useDeviceStore.getState().selectedDeviceId
-    const url = toWebSocketUrl({ device_id: deviceId ?? '' })
-    if (url === this.abandonedUrl) return
+    // Two URLs, deliberately. The browser cannot set a header on a WebSocket
+    // handshake, so the access token travels in the query string — the server's
+    // own instruction (reference §10), which lifts it to an Authorization
+    // header and strips it before logging.
+    //
+    // But the token changes every ~14 minutes, and `abandonedKey` exists to
+    // stop a /ws the deployment does not proxy from looping for the life of the
+    // tab. Keyed on the full URL it could never match again, so that ceiling
+    // would be refilled on every rotation — six refused sockets every fourteen
+    // minutes, forever. So the budget is keyed on the handshake *identity* and
+    // the socket is opened on the full URL: a rotation reopens (§10 freezes the
+    // principal at the handshake, so it must) without refilling anything, while
+    // a device switch or a new session still clears the budget as before.
+    const key = toWebSocketUrl({ device_id: deviceId ?? '' })
+    if (key === this.abandonedKey) return
+
+    const url = toWebSocketUrl({ access_token: token, device_id: deviceId ?? '' })
     if (url === this.url && this.desired) return
 
-    this.abandonedUrl = null
+    this.abandonedKey = null
     this.url = url
+    this.handshakeKey = key
     this.desired = true
     this.attempt = 0
     this.everOpened = false
@@ -66,7 +89,10 @@ class WsClient {
       if (useWsStore.getState().status === 'disconnected') return
     }
     this.desired = false
+    // `url` carries the access token, so clearing it here and on the
+    // non-authenticated branch of sync() is the only reason it is memory-only.
     this.url = ''
+    this.handshakeKey = ''
     this.clearTimer()
     this.closeSocket()
     useWsStore.setState({ status: 'disconnected' })
@@ -119,9 +145,12 @@ class WsClient {
     // on it and remember the URL, so a later no-op store write cannot restart
     // the loop through sync(). A device switch changes the URL and tries again.
     if (!this.everOpened && this.attempt >= MAX_HANDSHAKE_ATTEMPTS) {
-      const refused = this.url
+      // Captured before stop(), which clears both. What is remembered is the
+      // token-free identity, so the next rotation does not read as a new
+      // handshake worth another six attempts.
+      const refused = this.handshakeKey
       this.stop()
-      this.abandonedUrl = refused
+      this.abandonedKey = refused
       return
     }
     this.reconnectTimer = window.setTimeout(() => {
