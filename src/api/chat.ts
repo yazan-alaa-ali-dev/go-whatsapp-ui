@@ -35,6 +35,32 @@ export interface MessageInfo {
   filename: string
   url: string
   file_length: number
+
+  /**
+   * The maskable fields (reference §09). Every one of these is **deleted from
+   * the JSON** when the principal lacks its permission — not nulled, not
+   * emptied — so they are optional here and the compiler cannot be used to
+   * prove one is there.
+   *
+   * Read them with `hasField` from `@/lib/redaction`, which tests the key
+   * rather than the value. `message.sent_by || 'unknown'` and
+   * `message.has_debug === false` are both wrong, and both look right.
+   */
+  metadata_debug?: Record<string, unknown>
+  has_debug?: boolean
+  transcript?: string
+  transcript_language?: string
+  transcript_status?: string
+  sent_by?: string
+  sent_by_name?: string
+
+  /**
+   * **Not masked** (§09), and required for that reason: an automated reply can
+   * always be told from a human one, even without `messages.origin.read`. Only
+   * the human *identity* behind an outgoing message is redacted — `sent_by` and
+   * `sent_by_name` above.
+   */
+  sent_via: string
 }
 
 export interface ListChatsParams {

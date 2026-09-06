@@ -483,3 +483,118 @@ describe('a 401 spends exactly one refresh (AC-9, AC-10, AC-11)', () => {
     expect(useAuth.getState().endReason).toBe('expired')
   })
 })
+
+/**
+ * A 403 is a *permission* rejection, not an identity one (z8pmx9md71).
+ *
+ * Nothing was built for this: the interceptor above handles 401 and nothing
+ * else, so a 403 already falls straight through to `Promise.reject`. These
+ * assertions exist so it stays that way — an edit that widened the 401 branch
+ * to "4xx" would spend a refresh token on a permission the user simply does not
+ * have, and log them out of a session the server never questioned.
+ */
+describe('a 403 spends no refresh and ends no session (AC-20, AC-21, TC-10, TC-11)', () => {
+  const REFRESH_TOKEN = 'Rr9Tk4vB2nQ7wLz1Xc6Ym0Ps3Hd8Jf5Ae2Ou4Ig7N'
+
+  /** Records every request that left, and answers each one with `status`. */
+  function answerAllWith(status: number): { urls: string[] } {
+    const urls: string[] = []
+    http.defaults.adapter = async (config) => {
+      urls.push(config.url ?? '')
+      const response = {
+        status,
+        data: { code: status === 200 ? 'SUCCESS' : 'HTTP_ERROR', message: '', results: null },
+        statusText: '',
+        headers: {},
+        config,
+      } as AxiosResponse
+      if (status >= 400) {
+        throw new AxiosError('Request failed', 'ERR_BAD_REQUEST', config, undefined, response)
+      }
+      return response
+    }
+    return { urls }
+  }
+
+  function signedIn(): void {
+    useAuth.setState({
+      access_token: TOKEN,
+      refresh_token: REFRESH_TOKEN,
+      access_token_expires_at: Date.now() + 900_000,
+      user: null,
+      status: 'authenticated',
+      endReason: null,
+      lastRefresh: null,
+    })
+  }
+
+  it('issues no POST /auth/refresh (TC-11)', async () => {
+    signedIn()
+    const { urls } = answerAllWith(403)
+
+    await expect(http.post('/send/message', { phone: '1@s.whatsapp.net' })).rejects.toMatchObject({
+      status: 403,
+    })
+
+    // One request left: the one that was refused. No refresh, no replay.
+    expect(urls).toEqual(['/send/message'])
+    expect(urls).not.toContain('/auth/refresh')
+  })
+
+  it('leaves the session byte-for-byte as it was (AC-21)', async () => {
+    signedIn()
+    const before = useAuth.getState()
+    answerAllWith(403)
+
+    await expect(http.get('/chats')).rejects.toMatchObject({ status: 403 })
+
+    const after = useAuth.getState()
+    expect(after.status).toBe('authenticated')
+    expect(after.access_token).toBe(before.access_token)
+    expect(after.refresh_token).toBe(before.refresh_token)
+    expect(after.access_token_expires_at).toBe(before.access_token_expires_at)
+    // Not a session ending, so there is nothing for the login screen to say —
+    // and no refresh attempt to record.
+    expect(after.endReason).toBeNull()
+    expect(after.lastRefresh).toBeNull()
+  })
+
+  it('rejects with the status and code the caller needs to render it', async () => {
+    signedIn()
+    answerAllWith(403)
+
+    await expect(http.get('/chats')).rejects.toMatchObject({ status: 403, code: 'HTTP_ERROR' })
+  })
+
+  it('does not spend a refresh even on a burst of them', async () => {
+    // A screen that renders five guarded controls without a `<Can>` around them
+    // produces five 403s. None of them is evidence about the token.
+    signedIn()
+    const { urls } = answerAllWith(403)
+
+    await Promise.allSettled([
+      http.get('/chats'),
+      http.get('/groups'),
+      http.get('/newsletters'),
+      http.post('/send/message', {}),
+      http.post('/chat/x/pin', {}),
+    ])
+
+    expect(urls).toHaveLength(5)
+    expect(urls).not.toContain('/auth/refresh')
+    expect(useAuth.getState().status).toBe('authenticated')
+  })
+
+  it('still refreshes on a 401, so the guard above is about 403 and not about apathy', async () => {
+    // The control for every assertion in this block: the same harness, one
+    // status code different, and a refresh is attempted. Without this, all of
+    // the above would pass just as well on an interceptor that did nothing.
+    signedIn()
+    const { urls } = answerAllWith(401)
+
+    await expect(http.get('/chats')).rejects.toMatchObject({ status: 401 })
+
+    expect(urls).toContain('/auth/refresh')
+    expect(useAuth.getState().status).toBe('anonymous')
+  })
+})

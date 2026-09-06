@@ -3,8 +3,10 @@ import type { ApiError } from '@/api/types'
 import {
   CONNECTION_NOTICES,
   MAX_SERVER_MESSAGE,
+  PERMISSION_DENIED,
   RATE_LIMIT_WINDOW_SECONDS,
   SIGN_OUT_NOTICES,
+  toActionErrorMessage,
   toLoginError,
 } from './auth-messages'
 
@@ -117,5 +119,71 @@ describe('the connection notices inherited from the deleted connect screen', () 
   it('tells a failed probe apart from a refused origin', () => {
     expect(CONNECTION_NOTICES.unreachable.title).not.toBe(CONNECTION_NOTICES.unauthorized.title)
     expect(CONNECTION_NOTICES.unreachable.description).toMatch(/proxy/i)
+  })
+})
+
+describe('what a rejected action says (AC-19, TC-10)', () => {
+  it('reports a 403 as a permission rejection, not a malfunction', () => {
+    const message = toActionErrorMessage(apiError(403, 'HTTP_ERROR', 'forbidden'))
+
+    expect(message).toContain(PERMISSION_DENIED.title)
+    expect(message).toMatch(/permission/i)
+  })
+
+  it('keeps the server’s own text alongside the sentence', () => {
+    // A 403 is not necessarily gowa's — a WAF, a reverse proxy or an origin
+    // refusal answers 403 too, and §02 gives the 403 row NO error code (its
+    // code column is literally `—`), so there is nothing to key on. Keeping the
+    // detail is what tells an operator the request never reached gowa.
+    const message = toActionErrorMessage(
+      apiError(403, 'HTTP_ERROR', 'Request blocked by security policy 42'),
+    )
+
+    expect(message).toContain(PERMISSION_DENIED.title)
+    expect(message).toContain('Request blocked by security policy 42')
+  })
+
+  it('says only the sentence when the server explained nothing', () => {
+    expect(toActionErrorMessage(apiError(403, 'HTTP_ERROR', '   '))).toBe(PERMISSION_DENIED.title)
+  })
+
+  it('leaves every other failure reporting what the server said', () => {
+    expect(toActionErrorMessage(apiError(404, 'DEVICE_NOT_FOUND', 'device not found'))).toBe(
+      'device not found',
+    )
+    expect(toActionErrorMessage(apiError(500, 'HTTP_ERROR', 'boom'))).toBe('boom')
+  })
+
+  it('says something useful when a non-403 failure carried no message either', () => {
+    const message = toActionErrorMessage(apiError(500, 'HTTP_ERROR', ''))
+    expect(message).not.toBe('')
+    expect(message).toMatch(/did not say why/i)
+  })
+
+  it('caps server-chosen text on both arms', () => {
+    // Any intermediary in front of gowa chooses this string; the login screen
+    // already caps it, and a toast is no different.
+    const long = 'x'.repeat(MAX_SERVER_MESSAGE + 200)
+
+    const forbidden = toActionErrorMessage(apiError(403, 'HTTP_ERROR', long))
+    const other = toActionErrorMessage(apiError(500, 'HTTP_ERROR', long))
+
+    expect(forbidden).toContain('…')
+    expect(forbidden.length).toBeLessThan(long.length)
+    expect(other).toBe(`${'x'.repeat(MAX_SERVER_MESSAGE)}…`)
+  })
+
+  it('does not describe a 403 as a session problem', () => {
+    // The distinction the whole criterion rests on: a 403 is a permission
+    // rejection, not an identity one. Telling the user to sign in again would
+    // be wrong, and would send them to a screen that fixes nothing.
+    const message = toActionErrorMessage(apiError(403, 'HTTP_ERROR', 'forbidden'))
+
+    expect(message).not.toMatch(/sign in|log in|expired|session/i)
+    expect(PERMISSION_DENIED.description).toMatch(/nothing is wrong with your session/i)
+  })
+
+  it('normalises anything thrown, not only an ApiError', () => {
+    expect(toActionErrorMessage(new Error('plain failure'))).toBe('plain failure')
   })
 })
