@@ -1,23 +1,27 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
+import { RequireSession } from '@/components/layout/require-session'
 import { onWsEvent } from '@/lib/events'
+import { LOGIN_PATH } from '@/lib/session-route'
 import { wsClient } from '@/lib/ws'
 import { useAuth } from '@/stores/auth'
 import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
 import AccountPage from '@/pages/account'
 import ChatsPage from '@/pages/chats'
-import ConnectPage from '@/pages/connect'
 import DashboardPage from '@/pages/dashboard'
 import GroupsPage from '@/pages/groups'
+import LoginPage from '@/pages/login'
 import MessagingPage from '@/pages/messaging'
 import MiscPage from '@/pages/misc'
 import SettingsPage from '@/pages/settings'
 
 function useBootstrap() {
   const queryClient = useQueryClient()
+  const status = useAuth((state) => state.status)
+  const hadSession = useRef(false)
 
   useEffect(() => {
     void useConnection.getState().boot()
@@ -29,14 +33,45 @@ function useBootstrap() {
 
   useEffect(() => {
     wsClient.sync()
-    const unsubscribeConnection = useConnection.subscribe(() => wsClient.sync())
+    // The socket is reconciled from state, never commanded: sync() reads the
+    // session and the device selection, so ending a session closes the socket
+    // without anybody calling stop(). useConnection is no longer one of its
+    // inputs, so it is no longer one of its triggers either.
+    const unsubscribeAuth = useAuth.subscribe(() => wsClient.sync())
     const unsubscribeDevice = useDeviceStore.subscribe(() => wsClient.sync())
     return () => {
-      unsubscribeConnection()
+      unsubscribeAuth()
       unsubscribeDevice()
       wsClient.stop()
     }
   }, [])
+
+  /**
+   * Server state belongs to the session that fetched it, so the cache is
+   * emptied when a session ends — from any trigger, because this watches the
+   * outcome rather than any of the three things that can cause it.
+   *
+   * Edge-triggered by the ref: a level check ("status is not authenticated")
+   * would fire on every unrelated auth-store write, boot()'s own intermediate
+   * hydration write included.
+   *
+   * cancelQueries() before clear() closes the window where a request already in
+   * flight with the previous session's bearer resolves into the fresh cache —
+   * on a shared machine, the next user seeing the last one's chats. The query
+   * functions take no AbortSignal, so the request is not aborted; a cancelled
+   * query discards its result, and a cleared cache has no entry left to write
+   * it into.
+   */
+  useEffect(() => {
+    if (status === 'authenticated') {
+      hadSession.current = true
+      return
+    }
+    if (!hadSession.current) return
+    hadSession.current = false
+    void queryClient.cancelQueries()
+    queryClient.clear()
+  }, [status, queryClient])
 
   useEffect(
     () =>
@@ -67,18 +102,26 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/connect" element={<ConnectPage />} />
-      <Route element={<AppShell />}>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/messaging" element={<MessagingPage />} />
-        <Route path="/send" element={<Navigate to="/messaging" replace />} />
-        <Route path="/messages" element={<Navigate to="/messaging" replace />} />
-        <Route path="/groups" element={<GroupsPage />} />
-        <Route path="/chats" element={<ChatsPage />} />
-        <Route path="/account" element={<AccountPage />} />
-        <Route path="/misc" element={<MiscPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+      <Route path={LOGIN_PATH} element={<LoginPage />} />
+      {/* Every application route sits behind the guard, and the guard sits
+          above AppShell rather than inside it: inside, the shell would already
+          have mounted DeviceSwitcher and fired a guarded request before the
+          redirect could happen. */}
+      <Route element={<RequireSession />}>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/messaging" element={<MessagingPage />} />
+          <Route path="/send" element={<Navigate to="/messaging" replace />} />
+          <Route path="/messages" element={<Navigate to="/messaging" replace />} />
+          <Route path="/groups" element={<GroupsPage />} />
+          <Route path="/chats" element={<ChatsPage />} />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/misc" element={<MiscPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
       </Route>
+      {/* Includes the deleted /connect: a stale link lands on the dashboard
+          route, and the guard forwards it to the login screen. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

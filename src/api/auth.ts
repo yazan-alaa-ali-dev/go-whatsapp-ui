@@ -28,6 +28,12 @@ export interface AuthTokenPair {
   user?: AuthUser
 }
 
+/** What the login form sends, and the only shape `POST /auth/login` accepts. */
+export interface LoginCredentials {
+  username: string
+  password: string
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
@@ -45,6 +51,57 @@ export function isAuthUser(value: unknown): value is AuthUser {
     typeof candidate.username === 'string' &&
     isStringArray(candidate.permissions)
   )
+}
+
+/**
+ * The same argument as `isAuthUser`, one endpoint over: `ResponseData.results`
+ * is optional, so a 200 carrying an empty envelope would otherwise be stored as
+ * a session made of `undefined` — a signed-in state with no credential in it.
+ * `user` is not required here because the reference marks it optional on the
+ * pair; when it is missing the store falls back to `GET /auth/me`.
+ */
+export function isAuthTokenPair(value: unknown): value is AuthTokenPair {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<AuthTokenPair>
+  return (
+    typeof candidate.access_token === 'string' &&
+    candidate.access_token.length > 0 &&
+    typeof candidate.refresh_token === 'string' &&
+    candidate.refresh_token.length > 0 &&
+    typeof candidate.expires_in === 'number' &&
+    Number.isFinite(candidate.expires_in)
+  )
+}
+
+/**
+ * The only place a session is created. Public and body-only (reference §03), so
+ * `src/lib/http.ts` deliberately sends it no `Authorization` header and no
+ * `X-Device-Id`: a stale token in a cookie must not be able to change the
+ * outcome of a sign-in.
+ */
+export async function login(credentials: LoginCredentials): Promise<AuthTokenPair> {
+  const pair = await results<unknown>(http.post('/auth/login', credentials))
+  if (!isAuthTokenPair(pair)) {
+    const malformed: ApiError = {
+      status: 0,
+      code: 'MALFORMED_TOKEN_PAIR',
+      message: 'POST /auth/login answered without a token pair',
+    }
+    throw malformed
+  }
+  return pair
+}
+
+/**
+ * Revokes the whole refresh-token family. Public and body-only on purpose — it
+ * reads no principal — so a session whose access token has already died can
+ * still revoke a refresh token with 30 days left on it.
+ *
+ * There is no return value to unwrap: the reference notes `results` is omitted
+ * for this route entirely.
+ */
+export async function logout(refresh_token: string): Promise<void> {
+  await http.post('/auth/logout', { refresh_token })
 }
 
 /**

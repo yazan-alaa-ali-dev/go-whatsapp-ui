@@ -6,7 +6,6 @@ import {
 } from 'axios'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useAuth } from '@/stores/auth'
-import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
 import { http } from './http'
 
@@ -42,8 +41,8 @@ beforeEach(() => {
     access_token_expires_at: null,
     user: null,
     status: 'unknown',
+    endReason: null,
   })
-  useConnection.setState({ status: 'connected' })
   useDeviceStore.setState({ selectedDeviceId: null })
 })
 
@@ -95,26 +94,115 @@ describe('the bearer header', () => {
   })
 })
 
-describe('what a 401 means', () => {
-  it('marks the connection unauthorized when a guarded endpoint refuses', async () => {
+describe('the public auth routes carry no credential (AC-4, TC-9)', () => {
+  /**
+   * `/auth/login`, `/auth/refresh` and `/auth/logout` are public and read their
+   * body only (reference §03). A sign-in has to work while the browser is
+   * carrying a stale or corrupt token, and the way to guarantee that is not to
+   * send it — the reference says the server tolerates one, but tolerance is not
+   * a thing to depend on.
+   */
+  it('sends no Authorization header to any of them', async () => {
+    const { sent } = respondWith(200)
+    useAuth.setState({ access_token: TOKEN })
+
+    await http.post('/auth/login', { username: 'admin', password: 'x' })
+    await http.post('/auth/refresh', { refresh_token: 'r' })
+    await http.post('/auth/logout', { refresh_token: 'r' })
+
+    for (const request of sent) expect(request.headers.Authorization).toBeUndefined()
+  })
+
+  it('sends no device id either — it belongs to a session, not to a public route', async () => {
+    const { sent } = respondWith(200)
+    useDeviceStore.setState({ selectedDeviceId: 'device-1' })
+
+    await http.post('/auth/login', { username: 'admin', password: 'x' })
+
+    expect(sent[0].headers['X-Device-Id']).toBeUndefined()
+  })
+
+  it('still sends the bearer to /auth/me, the one auth route that needs it', async () => {
+    const { sent } = respondWith(200)
+    useAuth.setState({ access_token: TOKEN })
+    useDeviceStore.setState({ selectedDeviceId: 'device-1' })
+
+    await http.get('/auth/me')
+
+    expect(sent[0].headers.Authorization).toBe(`Bearer ${TOKEN}`)
+    expect(sent[0].headers['X-Device-Id']).toBe('device-1')
+  })
+})
+
+describe('what a 401 means now that a session can exist', () => {
+  /** A session the store would call live: authenticated, token not yet expired. */
+  function signedIn(expiresAt: number): void {
+    useAuth.setState({
+      access_token: TOKEN,
+      refresh_token: 'refresh-token',
+      access_token_expires_at: expiresAt,
+      user: null,
+      status: 'authenticated',
+      endReason: null,
+    })
+  }
+
+  it('ends the session when a guarded endpoint refuses a live token (TC-7)', async () => {
+    // Before this ticket a 401 could only mean "this origin is refused". With a
+    // session it means the opposite: the origin is fine and the token is not.
+    respondWith(401)
+    signedIn(Date.now() + 900_000)
+
+    await expect(http.get('/devices')).rejects.toMatchObject({ status: 401 })
+
+    expect(useAuth.getState().status).toBe('anonymous')
+    expect(useAuth.getState().endReason).toBe('permissions-changed')
+  })
+
+  it('calls an already-expired token an expiry, not an administrative change', async () => {
+    respondWith(401)
+    signedIn(Date.now() - 1_000)
+
+    await expect(http.get('/devices')).rejects.toMatchObject({ status: 401 })
+
+    expect(useAuth.getState().endReason).toBe('expired')
+  })
+
+  it('leaves the refresh token alone, so z8pmx9md70 still has one to use', async () => {
+    respondWith(401)
+    signedIn(Date.now() + 900_000)
+
+    await expect(http.get('/devices')).rejects.toMatchObject({ status: 401 })
+
+    expect(useAuth.getState().refresh_token).toBe('refresh-token')
+  })
+
+  it('changes nothing when no session was held', async () => {
+    // A 401 without a session is not a session ending — it is an
+    // unauthenticated request. This no-op is also what keeps a burst of refetch
+    // 401s harmless while the guard is still unmounting the protected tree.
     respondWith(401)
 
     await expect(http.get('/devices')).rejects.toMatchObject({ status: 401 })
 
-    expect(useConnection.getState().status).toBe('unauthorized')
+    expect(useAuth.getState().status).toBe('unknown')
+    expect(useAuth.getState().endReason).toBeNull()
   })
 
   /**
    * The /auth/* endpoints are public (reference §03): a 401 from one of them
-   * says "no valid session", never "this origin is refused" — which is what the
-   * connection status and its /connect screen exist to say. Without this, the
-   * landing screen after a reload depended on which of two promises won.
+   * says "these credentials are no good", never "the session you had just
+   * ended". A refused sign-in must not tear down a session.
    */
-  it('leaves the connection alone when an auth endpoint says there is no session', async () => {
+  it('leaves the session alone when an auth endpoint answers 401', async () => {
     respondWith(401)
+    signedIn(Date.now() + 900_000)
 
-    await expect(http.get('/auth/me')).rejects.toMatchObject({ status: 401 })
+    await expect(http.post('/auth/login', { username: 'a', password: 'b' })).rejects.toMatchObject({
+      status: 401,
+    })
 
-    expect(useConnection.getState().status).toBe('connected')
+    expect(useAuth.getState().status).toBe('authenticated')
+    expect(useAuth.getState().endReason).toBeNull()
   })
 })

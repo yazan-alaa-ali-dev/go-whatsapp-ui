@@ -87,14 +87,8 @@ describe('boot', () => {
   })
 })
 
-describe('markUnauthorized', () => {
-  it('only downgrades a connection that was working', () => {
-    useConnection.setState({ status: 'unreachable' })
-    useConnection.getState().markUnauthorized()
-    expect(useConnection.getState().status).toBe('unreachable')
-
-    useConnection.setState({ status: 'connected' })
-    useConnection.getState().markUnauthorized()
-    expect(useConnection.getState().status).toBe('unauthorized')
-  })
-})
+// `markUnauthorized` was removed by z8pmx9md6z. Its only consumer was the
+// connect screen, and a 401 from a guarded route now means a session ended
+// rather than an origin being refused — see src/lib/http.ts. `probeHealth`
+// still reports `unauthorized`, because a 401 on the *public* /health really
+// does mean something in front of gowa is refusing this origin.

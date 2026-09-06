@@ -54,8 +54,15 @@ function offenders(pattern: RegExp, allowed: string[] = []): string[] {
   )
 }
 
-/** Identifiers that only appear where a credential is being handled. */
-const CREDENTIAL = /access_token|refresh_token|\bBearer\b|password\s*[:=]|credential\s*[:=]/
+/**
+ * Identifiers that only appear where a credential is being handled.
+ *
+ * `password` is matched as a bare identifier rather than as `password:`
+ * (z8pmx9md6z): the narrower form missed `setPassword(x)`, `formData.password`
+ * and `type="password"` — every shape the login form actually uses. Widening it
+ * only ever makes the storage rule below stricter.
+ */
+const CREDENTIAL = /access_token|refresh_token|\bBearer\b|password|credential\s*[:=]/i
 const WEB_STORAGE = /\b(localStorage|sessionStorage)\b/
 
 it('reads the source it is meant to guard', () => {
@@ -126,6 +133,41 @@ describe('no token reaches a log, a URL or a rendered command (AC-18)', () => {
     const [, curl] = SOURCES.find(([path]) => path === 'src/lib/curl.ts')!
     expect(curl).toContain('Authorization: Bearer <token>')
     expect(/useAuth|access_token/.test(curl)).toBe(false)
+  })
+})
+
+describe('the credential the login form handles (z8pmx9md6z, AC-25)', () => {
+  it('RULE: `password` is named only where the form holds it and the request type declares it', () => {
+    // Substring, not `\bpassword\b`: the word-boundary form cannot match inside
+    // `setPassword`, which is the single most likely way a credential would
+    // actually escape a form. Mutation-testing this rule is what caught that.
+    expect(
+      offenders(/password/i, [
+        'src/api/auth.ts',
+        'src/pages/login.tsx',
+        'src/lib/auth-messages.ts',
+      ]),
+      'the password lives in the login form’s own state and is discarded after the request; auth-messages.ts names it in copy, never as a value',
+    ).toEqual([])
+  })
+
+  it('RULE: ending a session is one code path, and it lives in the store', () => {
+    // A logout button, an expired token and a refused token are three triggers
+    // for one outcome. If each grew its own teardown they would drift, and one
+    // of them would eventually leave a half-cleared session behind.
+    expect(
+      offenders(/\bclearSession\(|\bendSession\(/, ['src/stores/auth.ts']),
+      'call signOut() or endRefusedSession(); the teardown itself belongs to the store',
+    ).toEqual([])
+  })
+
+  it('RULE: no server-supplied text is rendered as HTML', () => {
+    // The login screen renders a message any intermediary in front of gowa can
+    // choose, to a visitor who has not authenticated yet.
+    expect(
+      offenders(/dangerouslySetInnerHTML/),
+      'server and user text is rendered as a text child, which React escapes',
+    ).toEqual([])
   })
 })
 
