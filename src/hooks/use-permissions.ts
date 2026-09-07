@@ -5,6 +5,7 @@ import {
   NO_PERMISSIONS,
   type Permission,
 } from '@/lib/permissions'
+import { homeSurface, type HomeSurface } from '@/lib/surfaces'
 import { useAuth, type AuthState } from '@/stores/auth'
 
 /**
@@ -85,4 +86,25 @@ export function useHasAnyPermission(permissions: readonly Permission[]): boolean
 
 export function useHasAllPermissions(permissions: readonly Permission[]): boolean {
   return useAuth(selectHasAllPermissions(permissions))
+}
+
+/**
+ * Which home surface the current principal lands on (z8pmx9mf17).
+ *
+ * The derivation itself is `homeSurface` in `@/lib/surfaces` — pure, taking the
+ * array as an argument, reading no store. It is *called* from here because this
+ * is the one module allowed to read `permissions` off the principal, and the
+ * bridge is exactly what this file is for.
+ *
+ * It selects a **string**, so the snapshot is a primitive and survives every
+ * unrelated store write, including the rotation that replaces `user` with a
+ * structurally identical object. `usePermissions()` — which returns the array —
+ * would re-render the caller on that rotation; the home page has no reason to.
+ */
+export function selectHomeSurface(state: AuthState): HomeSurface {
+  return homeSurface(state.user?.permissions)
+}
+
+export function useHomeSurface(): HomeSurface {
+  return useAuth(selectHomeSurface)
 }

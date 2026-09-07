@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
+import { SURFACE_PERMISSIONS } from '@/components/layout/navigation'
+import { RequirePermission } from '@/components/layout/require-permission'
 import { RequireSession } from '@/components/layout/require-session'
 import { onWsEvent } from '@/lib/events'
 import { sessionRefresh } from '@/lib/session-refresh'
@@ -12,13 +14,16 @@ import { useAuth } from '@/stores/auth'
 import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
 import AccountPage from '@/pages/account'
+import AccountDetailPage from '@/pages/account-detail'
+import AccountsPage from '@/pages/accounts'
 import ChatsPage from '@/pages/chats'
-import DashboardPage from '@/pages/dashboard'
 import GroupsPage from '@/pages/groups'
+import HomePage from '@/pages/home'
 import LoginPage from '@/pages/login'
 import MessagingPage from '@/pages/messaging'
 import MiscPage from '@/pages/misc'
 import SettingsPage from '@/pages/settings'
+import UsersPage from '@/pages/users'
 
 function useBootstrap() {
   const queryClient = useQueryClient()
@@ -127,7 +132,9 @@ function App() {
           redirect could happen. */}
       <Route element={<RequireSession />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
+          {/* A dispatcher since z8pmx9mf17: platform, account or the device grid
+              this route has always been, chosen from permissions[] alone. */}
+          <Route path="/" element={<HomePage />} />
           <Route path="/messaging" element={<MessagingPage />} />
           <Route path="/send" element={<Navigate to="/messaging" replace />} />
           <Route path="/messages" element={<Navigate to="/messaging" replace />} />
@@ -136,6 +143,24 @@ function App() {
           <Route path="/account" element={<AccountPage />} />
           <Route path="/misc" element={<MiscPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* The administrative surfaces. They are gated on `.manage`, never on
+              `.manage.all`: the pair answer different questions, and the global
+              one would hide these screens from every account administrator, who
+              is their primary audience (reference §04). Moving BETWEEN accounts
+              is the `.manage.all` question and is gated separately, inside
+              /accounts/:accountId — see `mayEnterAccount`.
+
+              Both guards sit INSIDE RequireSession, and must stay there: they
+              decide from client state, so above it they would flash a refusal
+              during the window where a cookie exists and /auth/me has not
+              answered. */}
+          <Route element={<RequirePermission permission={SURFACE_PERMISSIONS.accounts} />}>
+            <Route path="/accounts" element={<AccountsPage />} />
+            <Route path="/accounts/:accountId" element={<AccountDetailPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={SURFACE_PERMISSIONS.users} />}>
+            <Route path="/users" element={<UsersPage />} />
+          </Route>
         </Route>
       </Route>
       {/* Includes the deleted /connect: a stale link lands on the dashboard
