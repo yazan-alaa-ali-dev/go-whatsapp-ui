@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiError } from '@/api/types'
 import {
+  ADMIN_REJECTIONS,
+  type AdminRejection,
   CONNECTION_NOTICES,
   MAX_SERVER_MESSAGE,
   PERMISSION_DENIED,
@@ -185,5 +187,83 @@ describe('what a rejected action says (AC-19, TC-10)', () => {
 
   it('normalises anything thrown, not only an ApiError', () => {
     expect(toActionErrorMessage(new Error('plain failure'))).toBe('plain failure')
+  })
+})
+
+describe('the phase-2 rejections (AC-27, AC-28, TC-15)', () => {
+  const KEYS: AdminRejection[] = [
+    'account-has-devices',
+    'account-device-count-mismatch',
+    'already-taken',
+    'not-found',
+    'privilege-escalation',
+    'self-mutation',
+    'last-administrator',
+    'password-hashing-busy',
+  ]
+
+  it('covers every rejection the ticket lists, and nothing else', () => {
+    expect(Object.keys(ADMIN_REJECTIONS).sort()).toEqual([...KEYS].sort())
+  })
+
+  it('sits beside the existing permission-denied entry rather than replacing it', () => {
+    expect(PERMISSION_DENIED.title).toBeTruthy()
+    expect(Object.values(ADMIN_REJECTIONS)).not.toContain(PERMISSION_DENIED)
+  })
+
+  it('says what happened and what to do next, in every entry', () => {
+    for (const key of KEYS) {
+      const notice = ADMIN_REJECTIONS[key]
+      expect(notice.title.length, key).toBeGreaterThan(0)
+      // Long enough to carry a consequence and a next step; short enough that
+      // nobody has pasted a server string in.
+      expect(notice.description.length, key).toBeGreaterThan(60)
+      expect(notice.description.length, key).toBeLessThan(400)
+      expect(notice.description.trim().endsWith('.'), key).toBe(true)
+    }
+  })
+
+  it('carries no markup, so nothing here can be rendered as HTML', () => {
+    for (const key of KEYS) {
+      expect(ADMIN_REJECTIONS[key].title, key).not.toMatch(/[<>]/)
+      expect(ADMIN_REJECTIONS[key].description, key).not.toMatch(/[<>]/)
+    }
+  })
+
+  it('never names which of the three joined causes collided', () => {
+    // The specification documents ONE 409 for "the username, the email, or the
+    // inline account id is already taken". Reporting which one would reinstate
+    // a user-enumeration oracle the backend deliberately withheld — the same
+    // one AUTH_INVALID_CREDENTIALS gives up on the sign-in screen, and which
+    // the CREDENTIALS notice above already refuses to reconstruct.
+    const taken = ADMIN_REJECTIONS['already-taken'].description
+    expect(taken).toMatch(/username/)
+    expect(taken).toMatch(/email/)
+    expect(taken).toMatch(/account id/)
+    expect(taken).toMatch(/does not say which/)
+  })
+
+  it('never asserts that something does not exist', () => {
+    // The 404 covers "no such user, account OR role", and an account belonging
+    // to another tenant answers the same 404 byte for byte. So the notice must
+    // stay non-committal between "gone" and "not yours".
+    const notFound = ADMIN_REJECTIONS['not-found'].description
+    expect(notFound).toMatch(/not available to your account/)
+    expect(notFound).toMatch(/the same way for both/)
+  })
+
+  it('is a table and not a classifier — nothing here consumes an error', () => {
+    // Two of the eight have a name on the wire and both are INFERRED from prose
+    // descriptions of a 409 rather than read out of a rendered envelope. A
+    // caller that knows which request it just made picks an entry; a function
+    // guessing from a status code would be picking between 403s and between
+    // 409s it cannot tell apart. That belongs to the ticket with the callers.
+    for (const notice of Object.values(ADMIN_REJECTIONS)) {
+      expect(typeof notice).toBe('object')
+      expect(typeof notice.title).toBe('string')
+    }
+    expect(toActionErrorMessage({ status: 403, code: '', message: '' })).toBe(
+      PERMISSION_DENIED.title,
+    )
   })
 })

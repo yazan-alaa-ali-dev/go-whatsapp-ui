@@ -102,8 +102,12 @@ describe('no credential reaches web storage (AC-9)', () => {
 
   it('RULE: only these files may name web storage at all — a new one must be justified here first', () => {
     expect(
-      offenders(WEB_STORAGE, ['src/stores/connection.ts', 'src/stores/device.ts']),
-      'connection.ts removes the legacy key; device.ts persists a device id, which is not a credential',
+      offenders(WEB_STORAGE, [
+        'src/stores/connection.ts',
+        'src/stores/device.ts',
+        'src/stores/account.ts',
+      ]),
+      'connection.ts removes the legacy key; device.ts and account.ts persist a device id and an account id, neither of which is a credential',
     ).toEqual([])
   })
 })
@@ -113,6 +117,10 @@ describe('the store is the only session owner (AC-1, AC-2, AC-10)', () => {
     const persisting = offenders(/persist\(|createJSONStorage/, [
       'src/stores/device.ts',
       'src/stores/recipient.ts',
+      // z8pmx9mf16: the account lens. An account id is a scope, not a
+      // credential — it names which devices are offered, and the server derives
+      // the account from the device that travels, never from this value.
+      'src/stores/account.ts',
     ])
     expect(persisting, 'the auth store persists to cookies, explicitly, in stores/auth.ts').toEqual(
       [],
@@ -188,6 +196,11 @@ describe('the credential the login form handles (z8pmx9md6z, AC-25)', () => {
         'src/api/auth.ts',
         'src/pages/login.tsx',
         'src/lib/auth-messages.ts',
+        // z8pmx9mf16: the administrative reset (POST /auth/users/{id}/password)
+        // and the create-user body. This is the case the rule's own message
+        // sanctions — "the request type declares it" — and it is all the file
+        // does: no value is held, stored or read back.
+        'src/api/users.ts',
       ]),
       'the password lives in the login form’s own state and is discarded after the request; auth-messages.ts names it in copy, never as a value',
     ).toEqual([])
@@ -264,6 +277,13 @@ describe('rights come from permissions[], never from a role name (z8pmx9md71)', 
         'src/stores/auth.ts',
         // The user menu renders it as identity, next to the username.
         'src/components/layout/user-menu.tsx',
+        // z8pmx9mf16: the user-administration wire type. `roles[]` is the field
+        // the API sends and receives, so it cannot be avoided and must not be
+        // renamed into something misleading. The exemption is narrowed rather
+        // than granted: the rule immediately below allows the file to DECLARE
+        // the field and nothing else, so a read, a rename, a lookup table or a
+        // bracket access still fails the build.
+        'src/api/users.ts',
       ]),
       'decide from permissions[] — see src/lib/permissions.ts; a role name is not authority',
     ).toEqual([])
@@ -292,7 +312,7 @@ describe('rights come from permissions[], never from a role name (z8pmx9md71)', 
     ).toEqual([])
   })
 
-  it('RULE: a permission check and a redaction check are different authorities and may not import each other', () => {
+  it('RULE: a permission check, a redaction check and a device-scope check are three authorities and none may import another', () => {
     // `hasField(m, 'sent_by')` reads like "I hold messages.origin.read" and is
     // not: it is a statement about one payload, from one request. Masking is
     // key deletion with no 403 attached (§09), so presence must never gate an
@@ -303,6 +323,17 @@ describe('rights come from permissions[], never from a role name (z8pmx9md71)', 
 
     expect(/from\s+['"][^'"]*redaction['"]/.test(permissions)).toBe(false)
     expect(/from\s+['"][^'"]*permissions['"]/.test(redaction)).toBe(false)
+
+    // z8pmx9mf16 adds the third. `hasScopedField(device, 'account_id')` reads
+    // like "I hold accounts.manage" and is not — it is a statement about one
+    // payload — and it is not the §09 masking rule either, which is about
+    // message fields and a different document section. Three authorities, three
+    // modules, no edge between any two of them.
+    const [, deviceScope] = SOURCES.find(([path]) => path === 'src/lib/device-scope.ts')!
+    expect(/from\s+['"][^'"]*device-scope['"]/.test(permissions)).toBe(false)
+    expect(/from\s+['"][^'"]*device-scope['"]/.test(redaction)).toBe(false)
+    expect(/from\s+['"][^'"]*permissions['"]/.test(deviceScope)).toBe(false)
+    expect(/from\s+['"][^'"]*redaction['"]/.test(deviceScope)).toBe(false)
   })
 
   it('RULE: the two files a later ticket opens say that hiding is not enforcement', () => {
@@ -317,5 +348,99 @@ describe('rights come from permissions[], never from a role name (z8pmx9md71)', 
       )
       expect(source).toMatch(/server is the only authority/)
     }
+  })
+})
+
+describe('the account is a lens, not a scope on the wire (z8pmx9mf16)', () => {
+  it('RULE: `roles` is DECLARED in src/api/users.ts and read nowhere — every mention is one of its field declarations', () => {
+    // This is what narrows the allowlist entry above from an exemption into a
+    // permission to declare. The study (§13) asks for exactly this distinction:
+    // a role as a value assigned or displayed is allowed, a role as a source of
+    // authority never is — and a plain allowlist entry grants both.
+    //
+    // Counting rather than stripping, deliberately. An earlier draft removed
+    // every `roles\s*\??\s*:` and asserted nothing was left; review showed that
+    // also erases `const { roles: assigned } = user` — a destructuring rename,
+    // which is a role read as authority — and an object literal `roles: [...]`.
+    // A stripping pass can hide what it was meant to catch. Counting cannot:
+    // every one of those adds a mention without adding a declaration.
+    const [, users] = SOURCES.find(([path]) => path === 'src/api/users.ts')!
+    const declarations = users.match(/^[ \t]*roles\??: string\[\][ \t]*\r?$/gm) ?? []
+    const mentions = users.match(/\brole\b|\broles\b/g) ?? []
+
+    expect(declarations.length, 'the wire field should still be declared').toBeGreaterThan(0)
+    expect(
+      mentions.length,
+      'src/api/users.ts may declare the field and do nothing else with it — decide from permissions[], see src/lib/permissions.ts',
+    ).toBe(declarations.length)
+  })
+
+  it('RULE: no file reads a role through a bracket access', () => {
+    // The spelling that survives every rule written against `.role`, and the
+    // one the sibling `permissions` rule was already hardened against. Free
+    // today — src/ contains zero occurrences — so it costs nothing and closes
+    // the gap before somebody finds it.
+    expect(
+      offenders(/\[\s*['"`]roles?['"`]\s*\]/),
+      'a role name is not authority; ROLE_CAPS[user.role] is the shape §04 forbids',
+    ).toEqual([])
+  })
+
+  it('RULE: there is no X-Account-Id header on this wire, so the name appears nowhere', () => {
+    // AC-5, asserted against the thing itself rather than against an import.
+    // The account is a client-side lens: the only scope that travels is
+    // X-Device-Id, and the backend derives the account from that device's
+    // ownership. A header named here would be a header this server ignores.
+    expect(
+      offenders(/X-Account-Id/i),
+      'the account narrows which devices are offered; the device id is what carries scope',
+    ).toEqual([])
+  })
+
+  it('RULE: a request header is attached in one file', () => {
+    // The import ban below is evadable by a relative specifier or a dynamic
+    // import, and in any case it does not stop a header being attached from
+    // anywhere that already holds an id. This does: every header this client
+    // sets is set in the one interceptor, where it can be read in one place.
+    expect(
+      offenders(/config\s*\.\s*headers\s*\[/, ['src/lib/http.ts']),
+      'headers are attached by the request interceptor in src/lib/http.ts',
+    ).toEqual([])
+  })
+
+  it('RULE: a store that persists names a versioned key', () => {
+    // Changing a persisted shape means changing the version, or state already
+    // saved in a user's browser is read back as the wrong thing. Asserted on
+    // the source because zustand's persist middleware degrades to a plain store
+    // when it cannot reach a storage — which is the case in this test
+    // environment — so there is no `.persist` to read the name off at runtime.
+    for (const path of ['src/stores/device.ts', 'src/stores/account.ts']) {
+      const [, source] = SOURCES.find(([candidate]) => candidate === path)!
+      expect(source, `${path} must persist under a versioned name`).toMatch(
+        /name:\s*'gowa-ui\.[a-z-]+\.v\d+'/,
+      )
+    }
+    // src/stores/recipient.ts persists under the unversioned `gowa-recipient`.
+    // It predates the convention and holds no shape this ticket touches, so it
+    // is recorded here rather than changed.
+    const [, recipient] = SOURCES.find(([path]) => path === 'src/stores/recipient.ts')!
+    expect(recipient).toContain("name: 'gowa-recipient'")
+  })
+
+  it('RULE: the account lens is imported only where the scope is owned or applied', () => {
+    // Matched on any specifier ending in `stores/account`, so a relative path
+    // and a dynamic import are caught with the aliased form. Nothing in
+    // src/lib/ may reach it — which is what makes "this store adds no header"
+    // structurally true rather than merely observed.
+    expect(
+      offenders(/(?:from|import\()\s*['"][^'"]*stores\/account['"]/, [
+        // The lens is reset when a session ends, in the effect that already
+        // clears the cache for the same reason.
+        'src/App.tsx',
+        // The one consumer: it turns the lens into a query key and a filter.
+        'src/hooks/use-devices.ts',
+      ]),
+      'read the scope through useDevices(); nothing in lib/ may reach the lens',
+    ).toEqual([])
   })
 })
