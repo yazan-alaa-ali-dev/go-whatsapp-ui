@@ -9,7 +9,7 @@ created_at: 2026-09-07
 updated_at: 2026-09-07
 links:
   clickup: "https://app.clickup.com/t/z8pmx9mf17"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/7"
 ---
 
 # Ticket: 7 · Derive navigation and the home surface from permissions
