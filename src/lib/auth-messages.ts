@@ -258,6 +258,7 @@ export function toActionErrorMessage(error: unknown): string {
 export type AdminRejection =
   | 'account-has-devices'
   | 'account-device-count-mismatch'
+  | 'account-id-taken'
   | 'already-taken'
   | 'not-found'
   | 'privilege-escalation'
@@ -277,6 +278,18 @@ export const ADMIN_REJECTIONS: Record<AdminRejection, Notice> = {
     title: 'The device count did not match',
     description:
       'Nothing was purged and nothing was deleted. The number of devices changed between reading the account and confirming the deletion. Reopen the account, check what it owns now, and confirm again.',
+  },
+  // 409 from POST /accounts (z8pmx9mf18). Separate from 'already-taken' below
+  // rather than folded into it, because the two endpoints answer differently
+  // and the difference is the whole reason that entry is worded the way it is:
+  // POST /auth/users joins three causes into one 409 and must not be split,
+  // while POST /accounts documents exactly one — "an account with this id
+  // already exists" — over an id the operator chose a second ago, so naming it
+  // hands back nothing they did not already type.
+  'account-id-taken': {
+    title: 'An account with this id already exists',
+    description:
+      'Nothing was created and nothing was overwritten — this is a create, not an upsert, so the existing account and its stored token reference are untouched. Choose a different id, or leave the field empty to have one generated.',
   },
   'already-taken': {
     title: 'That name is already in use',

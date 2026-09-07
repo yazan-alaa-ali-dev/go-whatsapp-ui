@@ -7,6 +7,8 @@ import {
   isForeignScope,
   MAX_ACCOUNT_NAME,
   mayEnterAccount,
+  scopeIsGone,
+  shouldLeaveDeletedAccount,
 } from '@/lib/surfaces'
 
 /**
@@ -272,5 +274,72 @@ describe('accountName (AC-15a)', () => {
   it('a name exactly at the cap is not truncated', () => {
     const exact = [{ account_id: 'a', name: 'N'.repeat(MAX_ACCOUNT_NAME) }]
     expect(accountName(exact, 'a')).toBe('N'.repeat(MAX_ACCOUNT_NAME))
+  })
+})
+
+describe('the lens does not survive the account (z8pmx9mf18, AC-21, TC-9)', () => {
+  it('leaves the account that was actually deleted', () => {
+    expect(shouldLeaveDeletedAccount('acc-a', 'acc-a', true)).toBe(true)
+  })
+
+  it('stays where it is when the account was kept', () => {
+    // `account_deleted: false` is the documented partial outcome, not a failure:
+    // the account still exists and is still a legitimate place to be standing.
+    expect(shouldLeaveDeletedAccount('acc-a', 'acc-a', false)).toBe(false)
+  })
+
+  it('stays where it is when a different account was deleted', () => {
+    expect(shouldLeaveDeletedAccount('acc-a', 'acc-b', true)).toBe(false)
+  })
+
+  it('does nothing when the scope is already implicit', () => {
+    // `null` is the implicit scope — the principal's own account, which the
+    // server narrows to by itself. There is nothing to leave.
+    expect(shouldLeaveDeletedAccount(null, 'acc-a', true)).toBe(false)
+  })
+
+  it('normalises both ids, like every other comparison in this module', () => {
+    expect(shouldLeaveDeletedAccount(' acc-a ', 'acc-a', true)).toBe(true)
+    expect(shouldLeaveDeletedAccount('acc-a', ' acc-a ', true)).toBe(true)
+    // A whitespace-only scope is the implicit scope, not "the account named ' '".
+    expect(shouldLeaveDeletedAccount('   ', '', true)).toBe(false)
+  })
+})
+
+describe('a lens naming an account that is gone (z8pmx9mf18, AC-21b, TC-9a)', () => {
+  const LIST = [{ account_id: 'acc-a' }, { account_id: 'acc-b' }]
+
+  it('clears a scope a loaded list does not contain', () => {
+    // The second tab. The lens persists to localStorage and zustand's persist
+    // does not broadcast, so this is how a browser learns that somebody else
+    // deleted the account it is standing in.
+    expect(scopeIsGone(LIST, 'acc-c')).toBe(true)
+  })
+
+  it('leaves a scope the list contains', () => {
+    expect(scopeIsGone(LIST, 'acc-b')).toBe(false)
+  })
+
+  it('leaves the lens alone while the list is pending or refused', () => {
+    // `undefined` is a query that has not answered, one that failed, and one
+    // disabled for a principal without accounts.manage. Clearing an operator's
+    // scope because a request was slow is a worse bug than the one this fixes.
+    expect(scopeIsGone(undefined, 'acc-c')).toBe(false)
+  })
+
+  it('leaves the lens alone for an empty list', () => {
+    // Indistinguishable from "the list did not really load", and a deployment
+    // with zero accounts has nothing this decision could be right about.
+    expect(scopeIsGone([], 'acc-c')).toBe(false)
+  })
+
+  it('says nothing about the implicit scope', () => {
+    expect(scopeIsGone(LIST, null)).toBe(false)
+    expect(scopeIsGone(LIST, '   ')).toBe(false)
+  })
+
+  it('normalises both sides before comparing', () => {
+    expect(scopeIsGone([{ account_id: ' acc-c ' }], 'acc-c')).toBe(false)
+    expect(scopeIsGone(LIST, ' acc-a ')).toBe(false)
   })
 })

@@ -194,6 +194,13 @@ describe('the phase-2 rejections (AC-27, AC-28, TC-15)', () => {
   const KEYS: AdminRejection[] = [
     'account-has-devices',
     'account-device-count-mismatch',
+    // z8pmx9mf18. Separate from 'already-taken' rather than folded into it,
+    // because the two endpoints answer differently and the difference is the
+    // reason that entry is worded the way it is: POST /auth/users joins three
+    // causes into one 409 and must not be split — reporting which collided is a
+    // user-enumeration oracle — while POST /accounts documents exactly one, over
+    // an id the operator chose a second ago.
+    'account-id-taken',
     'already-taken',
     'not-found',
     'privilege-escalation',
