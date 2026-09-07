@@ -227,3 +227,86 @@ export function toActionErrorMessage(error: unknown): string {
   const detail = serverMessage(apiError.message, '')
   return detail ? `${PERMISSION_DENIED.title}. ${detail}` : PERMISSION_DENIED.title
 }
+
+/**
+ * The phase-2 administrative rejections, next to `PERMISSION_DENIED` above.
+ *
+ * **The table says what the wire says, and no more.** Five of these have no
+ * error code anywhere in the reference, and two of the three that are named —
+ * `ACCOUNT_HAS_DEVICES` and `ACCOUNT_DEVICE_COUNT_MISMATCH` — appear only in
+ * prose descriptions of a 409, never inside a rendered envelope, so even those
+ * are inferred rather than transcribed. Inventing code strings for the rest
+ * would produce branches that never fire, which is the failure mode the typed
+ * `PERMISSIONS` catalogue exists to prevent one module over.
+ *
+ * **And the table does not split what the server joins.** `POST /auth/users`
+ * answers a single 409 for "the username, the email, **or** the inline account
+ * id is already taken", and a single 404 for "no such user, account **or**
+ * role". Reporting which of the three collided would hand back a
+ * user-enumeration oracle the backend deliberately withheld — the same oracle
+ * `AUTH_INVALID_CREDENTIALS` gives up on the sign-in screen, and which the
+ * `CREDENTIALS` notice above already refuses to reconstruct. `PATCH
+ * …/sms-fallback` documents its 404 as byte-identical for an account belonging
+ * to another tenant, for the same reason. So no notice below names a field, and
+ * none asserts that anything does not exist.
+ *
+ * There is no classifier here on purpose. Nothing in this ticket calls one, and
+ * a caller that knows which request it just made is better placed to pick an
+ * entry than a function guessing from a status code. `toActionErrorMessage`
+ * above remains the generic path, unchanged.
+ */
+export type AdminRejection =
+  | 'account-has-devices'
+  | 'account-device-count-mismatch'
+  | 'already-taken'
+  | 'not-found'
+  | 'privilege-escalation'
+  | 'self-mutation'
+  | 'last-administrator'
+  | 'password-hashing-busy'
+
+export const ADMIN_REJECTIONS: Record<AdminRejection, Notice> = {
+  // 409 ACCOUNT_HAS_DEVICES (code inferred from the reference's prose).
+  'account-has-devices': {
+    title: 'This account still has devices',
+    description:
+      'Nothing was deleted. Deleting an account that owns devices destroys their WhatsApp session keys, so it is never done as a side effect — ask for it explicitly, or detach or delete the devices first.',
+  },
+  // 409 ACCOUNT_DEVICE_COUNT_MISMATCH (code inferred the same way).
+  'account-device-count-mismatch': {
+    title: 'The device count did not match',
+    description:
+      'Nothing was purged and nothing was deleted. The number of devices changed between reading the account and confirming the deletion. Reopen the account, check what it owns now, and confirm again.',
+  },
+  'already-taken': {
+    title: 'That name is already in use',
+    description:
+      'The username, the email address or the account id you entered belongs to something that already exists. The server does not say which of the three, so change what you can and try again.',
+  },
+  'not-found': {
+    title: 'Not found',
+    description:
+      'What you named either does not exist or is not available to your account — the server answers the same way for both, on purpose. Check the id, and check that it belongs to an account you may address.',
+  },
+  'privilege-escalation': {
+    title: 'That change is above your own permissions',
+    description:
+      'You cannot grant a permission you do not hold yourself, and you cannot change or delete a user who holds one. Someone with the wider permission has to make this change.',
+  },
+  'self-mutation': {
+    title: 'You cannot do this to your own account',
+    description:
+      'Deleting or disabling the account you are signed in with is refused, so a deployment cannot be locked out by one click. Ask another administrator to do it.',
+  },
+  'last-administrator': {
+    title: 'This is the last administrator',
+    description:
+      'At least one active user must be able to administer users, so this one cannot be deleted, disabled, or stripped of that permission. There is no way to recover from that state through the API. Give another user the permission first.',
+  },
+  // 503 AUTH_BUSY — the same bcrypt queue the sign-in path meets, one surface over.
+  'password-hashing-busy': {
+    title: 'The server is busy',
+    description:
+      'The server could not hash the password right now because its queue is full. Nothing was changed. Wait a few seconds and try again.',
+  },
+}

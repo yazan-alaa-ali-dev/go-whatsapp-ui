@@ -7,6 +7,7 @@ import { onWsEvent } from '@/lib/events'
 import { sessionRefresh } from '@/lib/session-refresh'
 import { LOGIN_PATH } from '@/lib/session-route'
 import { wsClient } from '@/lib/ws'
+import { useAccountStore } from '@/stores/account'
 import { useAuth } from '@/stores/auth'
 import { useConnection } from '@/stores/connection'
 import { useDeviceStore } from '@/stores/device'
@@ -79,6 +80,15 @@ function useBootstrap() {
     hadSession.current = false
     void queryClient.cancelQueries()
     queryClient.clear()
+    // The account lens belongs to the session that chose it, for the same
+    // reason the cache does. Left behind, a second principal on this browser
+    // boots into the previous one's lens; holding accounts.manage they would
+    // see the empty list a foreign account is documented to return and read it
+    // as "I have no devices". enterAccount(null) also clears the device
+    // selection, and that is the point rather than a side effect: resetting the
+    // lens while leaving a device chosen under the old one re-creates the very
+    // mismatch that action exists to prevent.
+    useAccountStore.getState().enterAccount(null)
   }, [status, queryClient])
 
   useEffect(

@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOWA UI — دراسة المرحلة الثانية: الحسابات والمستخدمون والأجهزة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d1117; --bg-soft:#141a22; --bg-code:#0a0e14;
+    --fg:#e4e8ee; --fg-dim:#9fb0c3; --fg-mute:#6f8092;
+    --line:#243040; --line-soft:#1b2430;
+    --acc:#5fd3bc; --acc2:#7aa8f0; --warn:#f0b46a; --danger:#f08a8a; --ok:#8fd48f;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:"IBM Plex Sans Arabic","Noto Naskh Arabic","Cairo",serif;
+    font-size:16.5px; line-height:2.05; letter-spacing:.1px;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:48px 26px 120px}
+  header.top{border-bottom:1px solid var(--line); padding-bottom:26px; margin-bottom:34px}
+  h1{font-size:2.05rem; line-height:1.55; margin:0 0 10px; font-weight:700; color:#fff}
+  .sub{color:var(--fg-dim); font-size:1rem; margin:0 0 8px}
+  h2{
+    font-size:1.42rem; margin:56px 0 16px; padding-top:22px; font-weight:700;
+    border-top:1px solid var(--line); color:#fff;
+  }
+  h2 .num{color:var(--acc); font-family:"JetBrains Mono",monospace; font-size:1rem; margin-left:10px}
+  h3{font-size:1.12rem; margin:32px 0 12px; font-weight:600; color:var(--acc2)}
+  h4{font-size:1rem; margin:22px 0 8px; font-weight:600; color:var(--fg)}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 16px; padding-right:22px}
+  li{margin-bottom:9px}
+  code{
+    font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;
+    font-size:.855em; background:var(--bg-soft); color:var(--acc);
+    padding:2px 6px; border-radius:5px; border:1px solid var(--line-soft);
+    direction:ltr; unicode-bidi:embed; display:inline-block;
+  }
+  pre{
+    background:var(--bg-code); border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; direction:ltr; text-align:left;
+    font-family:"JetBrains Mono",monospace; font-size:.85rem; line-height:1.75;
+    margin:0 0 18px;
+  }
+  pre code{background:none; border:none; padding:0; color:#cfe3f5; display:block}
+  .k{color:#7aa8f0} .s{color:#9ad4a0} .c{color:#66798c; font-style:italic} .n{color:#f0b46a}
+  table{width:100%; border-collapse:collapse; margin:0 0 20px; font-size:.9rem}
+  th,td{border:1px solid var(--line); padding:9px 11px; text-align:right; vertical-align:top; line-height:1.8}
+  th{background:var(--bg-soft); color:#fff; font-weight:600}
+  td code,th code{font-size:.86em}
+  .box{border:1px solid var(--line); border-right:3px solid var(--acc); background:var(--bg-soft);
+       border-radius:8px; padding:14px 18px; margin:0 0 20px}
+  .box.warn{border-right-color:var(--warn)}
+  .box.danger{border-right-color:var(--danger)}
+  .box.ok{border-right-color:var(--ok)}
+  .box b{color:#fff}
+  .tag{font-family:"JetBrains Mono",monospace; font-size:.72rem; padding:2px 8px;
+       border-radius:20px; border:1px solid var(--line); color:var(--fg-dim); background:var(--bg-soft);
+       direction:ltr; unicode-bidi:embed; display:inline-block}
+  .tag.get{color:var(--ok); border-color:#2c4a2c}
+  .tag.post{color:var(--acc2); border-color:#26405f}
+  .tag.patch{color:var(--warn); border-color:#5c4526}
+  .tag.put{color:var(--warn); border-color:#5c4526}
+  .tag.del{color:var(--danger); border-color:#5c2c2c}
+  nav.toc{background:var(--bg-soft); border:1px solid var(--line); border-radius:10px; padding:20px 26px; margin-bottom:10px}
+  nav.toc ol{padding-right:20px; margin:0; columns:2; column-gap:34px}
+  nav.toc a{color:var(--fg-dim); text-decoration:none; border-bottom:1px dotted var(--line)}
+  nav.toc a:hover{color:var(--acc)}
+  hr{border:none; border-top:1px solid var(--line-soft); margin:28px 0}
+  .muted{color:var(--fg-mute); font-size:.9rem}
+  .ascii{background:var(--bg-code); border:1px solid var(--line); border-radius:10px;
+         padding:16px 18px; overflow-x:auto; direction:ltr; text-align:left;
+         font-family:"JetBrains Mono",monospace; font-size:.8rem; line-height:1.6;
+         color:#9fb0c3; margin:0 0 18px; white-space:pre}
+  footer{margin-top:70px; padding-top:22px; border-top:1px solid var(--line); color:var(--fg-mute); font-size:.88rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>GOWA UI — دراسة المرحلة الثانية</h1>
+  <p class="sub">
+    طبقة الـ <b>accounts</b>، وسطح إدارة الـ <b>users</b>، وتغليف الـ devices
+    داخل الحساب — مع فصل واضح بين سطح الـ super admin وسطح الـ account admin
+    وتجربة الـ user العادي.
+  </p>
+  <p class="muted">
+    المصدر: <code>docs/gowa-frontend-reference-ar.html</code> (النص + الـ
+    <code>openapi.yaml</code> المدمج) مقروءاً مقابل الـ source الحالي تحت
+    <code>src/</code> بعد إغلاق tickets 1 إلى 5. هذه <b>دراسة قبل التنفيذ</b> —
+    لا كود فيها، ولا تُغني عن دورة <code>/start-ticket → /research → /spec →
+    /plan → /review</code>.
+  </p>
+</header>
+
+<nav class="toc">
+  <ol>
+    <li><a href="#p1">نطاق الدراسة ومنهجها</a></li>
+    <li><a href="#p2">الخلاصة التنفيذية والفكرة المركزية</a></li>
+    <li><a href="#p3">ما تركته المرحلة الأولى</a></li>
+    <li><a href="#p4">نموذج النطاق: الحساب عدسة والجهاز نطاق</a></li>
+    <li><a href="#p5">خريطة الصلاحيات إلى الأسطح</a></li>
+    <li><a href="#p6">نموذج المسارات والـ navigation</a></li>
+    <li><a href="#p7">سطح الحسابات — super admin</a></li>
+    <li><a href="#p8">أجهزة الحساب — العضوية والترتيب والحجب</a></li>
+    <li><a href="#p9">إعدادات الحساب — SMS fallback والحذف</a></li>
+    <li><a href="#p10">إدارة المستخدمين</a></li>
+    <li><a href="#p11">تجربة الـ user العادي</a></li>
+    <li><a href="#p12">طبقة الـ API والـ types الجديدة</a></li>
+    <li><a href="#p13">القواعد التي يفرضها الـ codebase</a></li>
+    <li><a href="#p14">فجوات الـ backend والأسئلة المفتوحة</a></li>
+    <li><a href="#p15">تقسيم التذاكر المقترح</a></li>
+    <li><a href="#p16">مصفوفة التحقق</a></li>
+  </ol>
+</nav>
+
+
+<h2 id="p1"><span class="num">01</span> نطاق الدراسة ومنهجها</h2>
+
+<p>
+  المطلوب من هذه المرحلة ثلاثة أسطح لا واحد، ويجب ألّا تُخلط: سطح
+  <b>platform</b> يملكه الـ super admin ويرى منه كل الحسابات ويدخل أيّها شاء،
+  وسطح <b>account</b> يملكه الـ admin ولا يرى منه إلا حسابه، وتجربة
+  <b>device</b> للمستخدم العادي هي الواجهة القائمة اليوم بعد تغليفها بحساب
+  صاحبها. الثلاثة تتشارك نفس الشاشات التشغيلية (chats، messaging، groups) وتختلف
+  في <b>ما الذي يدخلها</b>.
+</p>
+
+<p>
+  المنهج المتبع هنا: قراءة الـ reference بالكامل — النص العربي والـ
+  <code>openapi.yaml</code> الملحق به — ثم قراءة الـ source الحالي تحت
+  <code>src/</code> ملفاً ملفاً في المواضع التي تلمسها هذه المرحلة
+  (<code>App.tsx</code>، <code>stores/</code>، <code>hooks/</code>،
+  <code>lib/http.ts</code>، <code>lib/permissions.ts</code>،
+  <code>lib/source-policy.test.ts</code>)، ثم تسجيل كل تعارض بين الوثيقتين
+  بوصفه <b>سؤالاً مفتوحاً</b> لا بوصفه أمراً محسوماً.
+</p>
+
+<div class="box warn">
+  <b>حدود هذه الوثيقة.</b> هي دراسة design + impact analysis، ومخرجها الفعلي هو
+  الفصل <a href="#p15">15</a>: تقسيم إلى تذاكر صغيرة قابلة للمراجعة. كل ما عدا
+  ذلك سياق يشرح <i>لماذا</i> جاء التقسيم هكذا. لا شيء هنا يُعتبر spec معتمداً،
+  ولا يبدأ أي <code>/implement</code> قبل مروره على gate الـ <code>/review</code>.
+</div>
+
+
+<h2 id="p2"><span class="num">02</span> الخلاصة التنفيذية والفكرة المركزية</h2>
+
+<h3>الفكرة الواحدة التي يقوم عليها كل ما يلي</h3>
+
+<div class="box">
+  <b>الحساب ليس نطاقاً على الـ wire — الجهاز هو النطاق.</b> لا يوجد في الـ API
+  أي <code>X-Account-Id</code> ولا مفهوم impersonation ولا "account switch"
+  يُرسل مع الـ request. الشيء الوحيد الذي يحمل النطاق فعلياً هو
+  <code>X-Device-Id</code>، والـ backend يستنتج الحساب من ملكية الجهاز ويقارنه
+  بصلاحيات الـ principal. لذلك <b>سياق الحساب في الواجهة عدسة (lens) عميلة
+  بحتة</b>: هي تُضيّق قائمة الأجهزة المعروضة، ثم يفعل اختيار الجهاز الباقي.
+</div>
+
+<p>
+  هذه الجملة الواحدة تحسم قرارات كثيرة دفعة واحدة. دخول الـ super admin إلى حساب
+  عميل ليس تغيير هوية ولا طلباً إلى الـ server، بل <b>تغيير مصدر قائمة الأجهزة</b>
+  في الـ device switcher من <code>GET /devices</code> إلى
+  <code>GET /devices?account_id=…</code>. وكل الشاشات التشغيلية القائمة تعمل بلا
+  تعديل بمجرد أن يصير الجهاز المختار جهازاً من ذلك الحساب. ما يمنع الـ admin من
+  الدخول إلى حساب غيره ليس شرطاً في الواجهة، بل أن جهاز حساب آخر يُجاب عليه بـ
+  <code>404 DEVICE_NOT_FOUND</code> — نفس body جهاز غير موجود، بايتاً ببايت.
+</p>
+
+<h3>الأثر العملي على حجم العمل</h3>
+
+<table>
+  <tr><th>المحور</th><th>ما يلزم فعلاً</th><th>الحجم</th></tr>
+  <tr>
+    <td>تغليف الـ devices بالحساب</td>
+    <td>store جديد للـ account scope + تغيير مصدر قائمة الأجهزة. الشاشات التشغيلية لا تُلمس.</td>
+    <td>صغير</td>
+  </tr>
+  <tr>
+    <td>سطح الحسابات (super admin)</td>
+    <td>API client + شاشات list / detail / devices / settings. تسعة endpoints جديدة.</td>
+    <td>متوسط</td>
+  </tr>
+  <tr>
+    <td>سطح المستخدمين</td>
+    <td>API client + CRUD كامل + معالجة صريحة لثلاث رفضات خاصة. الأدق منطقياً في المرحلة.</td>
+    <td>متوسط</td>
+  </tr>
+  <tr>
+    <td>الـ navigation والـ three homes</td>
+    <td>اشتقاق السطح من <code>permissions[]</code>، وإعادة بناء جدول الـ routes.</td>
+    <td>صغير</td>
+  </tr>
+  <tr>
+    <td>تجربة الـ user</td>
+    <td>لا شيء تقريباً — الـ backend يُضيّق أصلاً. المطلوب empty states صادقة وشارة سياق.</td>
+    <td>صغير جداً</td>
+  </tr>
+</table>
+
+<h3>أهم خمس نتائج خرجت من القراءة</h3>
+
+<ol>
+  <li>
+    <b>زر «إضافة جهاز» الحالي قد يُنتج أجهزة يتيمة.</b>
+    <code>src/features/devices/create-device-dialog.tsx</code> ينادي
+    <code>POST /devices</code>، والـ reference لا يذكر أن هذا الـ endpoint يربط
+    الجهاز بحساب المُنشئ. وفي عالم مُغلَّف بالحساب، جهاز بـ
+    <code>account_id: ""</code> لا يراه أحد ولا يُرسل منه شيء. البديل الموجود
+    صراحةً هو <code>POST /accounts/{id}/devices/create</code>. تفصيل في
+    <a href="#p8">§08</a>.
+  </li>
+  <li>
+    <b>هناك مصدران مختلفان لقائمة أجهزة الحساب ولا يُغني أحدهما عن الآخر.</b>
+    <code>GET /devices</code> يقرأ من الـ registry فيحمل <code>state</code> حياً
+    لكنه لا يرى صفاً لم يُحمَّل، و<code>GET /accounts/{id}/devices</code> يقرأ
+    الصفوف فهو المرجع في العضوية والـ <code>priority</code> والـ
+    <code>send_state</code> لكنه لا يحمل حالة اتصال. شاشة أجهزة الحساب تحتاج
+    الاثنين مضمومين بـ <code>device_id</code>.
+  </li>
+  <li>
+    <b><code>PUT /accounts/{id}/devices/order</code> يرفض أي قائمة ناقصة.</b>
+    يجب إرسال مجموعة أجهزة الحساب كاملةً ومرتبة. بناؤها من الـ registry list
+    يعني 400 مضموناً في اللحظة التي لا يكون فيها جهاز محمَّلاً.
+  </li>
+  <li>
+    <b>كل <code>PATCH</code> غير فارغ على مستخدم يقطع كل جلساته.</b> والـ PATCH
+    الفارغ تماماً <code>400</code> لا no-op. فنموذج التعديل يجب أن يُرسل الحقول
+    المتسخة (dirty) فقط، وأن يُحذّر قبل الحفظ. وحين يكون الهدف هو المستخدم
+    نفسه، فإن الجلسة الحالية تموت فوراً — وهي حالة تعالجها المرحلة الأولى أصلاً
+    عبر <code>refusalReason</code>.
+  </li>
+  <li>
+    <b>قاعدة الـ codebase «لا اسم role في الكود» ستصطدم بهذه المرحلة.</b>
+    <code>src/lib/source-policy.test.ts</code> يُفشل الـ build إن ذُكر
+    <code>role</code> أو <code>roles</code> خارج خمسة ملفات. وسطح إدارة
+    المستخدمين <b>يجب</b> أن يسمّي الأدوار لأنه يُسندها. الحل ليس كسر القاعدة بل
+    توسيعها بتمييز مكتوب: role كـ <i>قيمة تُسنَد</i> مسموح، role كـ
+    <i>مصدر سلطة</i> ممنوع. تفصيل في <a href="#p13">§13</a>.
+  </li>
+</ol>
+
+
+<h2 id="p3"><span class="num">03</span> ما تركته المرحلة الأولى</h2>
+
+<p>
+  المرحلة الأولى (tickets 1–5) لم تبنِ شاشات، بل بنت الأرضية التي تقف عليها هذه
+  المرحلة. من المهم معرفة ما هو <b>جاهز فعلاً</b> حتى لا تُعاد كتابته:
+</p>
+
+<table>
+  <tr><th>القطعة</th><th>الملف</th><th>ما تعطيه للمرحلة الثانية</th></tr>
+  <tr>
+    <td>same-origin proxy</td><td><code>src/lib/url.ts</code></td>
+    <td>كل request يخرج من prefix نسبي واحد — لا عنوان backend في الواجهة.</td>
+  </tr>
+  <tr>
+    <td>session store</td><td><code>src/stores/auth.ts</code></td>
+    <td>المالك الوحيد للـ token pair وللـ principal. <code>user.account_id</code> متاح مباشرة.</td>
+  </tr>
+  <tr>
+    <td>login + route guard</td><td><code>src/pages/login.tsx</code>، <code>components/layout/require-session.tsx</code></td>
+    <td>كل route تطبيقي خلف الحارس. لا شاشة تُرسم بلا principal.</td>
+  </tr>
+  <tr>
+    <td>silent refresh + 401</td><td><code>src/lib/session-refresh.ts</code>، <code>src/lib/http.ts</code></td>
+    <td>محاولة refresh واحدة لكل request، ثم logout كامل. الـ token epoch مُعالج برسالة صادقة.</td>
+  </tr>
+  <tr>
+    <td>طبقة الصلاحيات</td><td><code>src/lib/permissions.ts</code>، <code>src/hooks/use-permissions.ts</code>، <code>src/components/shared/can.tsx</code></td>
+    <td>الكتالوج الكامل (28 اسماً) بـ union مغلق، وقارئ واحد لـ <code>permissions[]</code>، و<code>&lt;Can&gt;</code> جاهز.</td>
+  </tr>
+  <tr>
+    <td>قاعدة الـ redaction</td><td><code>src/lib/redaction.ts</code></td>
+    <td><code>hasField</code> و<code>hasDiagnostics</code> — فحص وجود المفتاح لا قيمته.</td>
+  </tr>
+  <tr>
+    <td>حارس الـ source</td><td><code>src/lib/source-policy.test.ts</code></td>
+    <td>قواعد قابلة للتشغيل: لا role في القرار، قارئ واحد للصلاحيات، لا token في log أو storage.</td>
+  </tr>
+</table>
+
+<div class="box ok">
+  <b>النتيجة:</b> المرحلة الثانية لا تحتاج أن تلمس الـ auth ولا الـ http
+  interceptors ولا الـ WebSocket. كل ما تضيفه هو <b>أسطح</b> فوق أرضية مبنية،
+  وstore واحد صغير للنطاق. هذا ما يجعل تقسيمها إلى ثماني تذاكر صغيرة ممكناً.
+</div>
+
+<h3>وما لم تفعله المرحلة الأولى عمداً</h3>
+<p>
+  الطبقة موجودة لكن لا أحد يستعملها بعد: لا <code>&lt;Can&gt;</code> واحد في
+  الشجرة، ولا قائمة تنقل مشروطة، ولا صندوق إرسال مخفي عن الـ user role. هذه
+  المرحلة هي أول مستهلك حقيقي لـ <code>permissions[]</code> — وهو سبب إضافي
+  ليكون أول ticket فيها هو الذي يوصل الطبقة بالـ navigation.
+</p>
+
+
+<h2 id="p4"><span class="num">04</span> نموذج النطاق: الحساب عدسة والجهاز نطاق</h2>
+
+<h3>ما الذي يسافر مع الـ request فعلاً</h3>
+
+<div class="ascii">  browser                                    server
+  ───────                                    ──────
+  Authorization: Bearer &lt;jwt&gt;   ──────────►  principal  (who you are)
+                                             ├─ permissions[]  ← the only authority
+                                             └─ account_id     ← your home account
+
+  X-Device-Id: acme-prod-1      ──────────►  device row
+                                             └─ account_id  ← compared to the principal
+                                                             mismatch ⇒ 404, never 403
+
+  (nothing else)                             there is NO X-Account-Id header
+</div>
+
+<p>
+  الـ header الوحيد الذي تضيفه الواجهة اليوم في
+  <code>src/lib/http.ts</code> هو <code>X-Device-Id</code> من
+  <code>useDeviceStore</code>. هذا يبقى كما هو تماماً. ما يتغير هو <b>من أين
+  تأتي قائمة الأجهزة التي يُختار منها</b>.
+</p>
+
+<h3>الـ store الجديد: نطاق الحساب</h3>
+
+<p>
+  نطاق واحد، بقيمة واحدة، بمعنى واحد: <code>null</code> يعني «حسابي أنا» —
+  وهو النطاق الضمني الذي يطبّقه الـ server تلقائياً — وأي قيمة أخرى تعني
+  «أنظر إلى هذا الحساب»، وهي حالة لا يصل إليها إلا من يملك
+  <code>accounts.manage.all</code>.
+</p>
+
+<pre dir="ltr"><code><span class="c">// src/stores/account.ts  — versioned name, like every persisted store here</span>
+<span class="k">interface</span> AccountScopeState {
+  <span class="c">/** null = the implicit scope: whatever account the principal belongs to. */</span>
+  accountId: <span class="k">string</span> | <span class="k">null</span>
+  enterAccount: (id: <span class="k">string</span> | <span class="k">null</span>) =&gt; <span class="k">void</span>
+}
+
+<span class="c">// gowa-ui.account.v1</span></code></pre>
+
+<div class="box warn">
+  <b>القاعدة التي تمنع أسوأ bug في هذه المرحلة.</b> تغيير الحساب <b>يجب</b> أن
+  يمسح اختيار الجهاز في نفس الـ action، لا في <code>useEffect</code> لاحق:
+  جهاز الحساب السابق سيبقى في الـ header لبرهة، فتخرج requests بجهاز حساب آخر
+  وتعود 404 بلا سبب مفهوم. <code>enterAccount()</code> ينادي
+  <code>selectDevice(null)</code> بشكل متزامن — نقطة كتابة واحدة، بلا سلسلة
+  effects.
+</div>
+
+<h3>من أين تأتي قائمة الأجهزة</h3>
+
+<table>
+  <tr><th>الحالة</th><th>المصدر</th><th>ملاحظة</th></tr>
+  <tr>
+    <td>لا نطاق مُعيَّن (<code>accountId === null</code>)</td>
+    <td><span class="tag get">GET</span> <code>/devices</code></td>
+    <td>الـ server يُضيّق بحساب المستخدم تلقائياً. هذا هو سلوك اليوم.</td>
+  </tr>
+  <tr>
+    <td>نطاق مُعيَّن + <code>accounts.manage</code></td>
+    <td><span class="tag get">GET</span> <code>/devices?account_id=…</code></td>
+    <td>يُضيّق ولا يوسّع أبداً. حساب أجنبي ⇒ <code>200</code> بقائمة فارغة لا 403.</td>
+  </tr>
+  <tr>
+    <td>شاشة إدارة أجهزة الحساب</td>
+    <td><span class="tag get">GET</span> <code>/accounts/{id}/devices</code></td>
+    <td>المرجع الرسمي للعضوية والترتيب. بلا حالة اتصال — يُضَم بالمصدر الأول.</td>
+  </tr>
+</table>
+
+<div class="box danger">
+  <b>فخ في الـ filter.</b> الـ reference يقول إن
+  <code>?account_id=</code> «يتطلب <code>accounts.manage</code> ليكون مُهيّأً،
+  وبدونه يُجيب الـ filter بـ <code>503</code>». فلا تُرسل الـ parameter إلا
+  عندما يحمل الـ principal <code>accounts.manage</code>. وقيمة فارغة تعني
+  <b>لا فلترة</b> — لا تعني «الأجهزة بلا حساب»، فلا تُرسلها أبداً للتعبير عن
+  ذلك المعنى. و<code>account_id</code> مشوّه الشكل يعطي <code>400</code>: ففرّق
+  في الواجهة بين «فارغ» و«خطأ صيغة».
+</div>
+
+
+<h2 id="p5"><span class="num">05</span> خريطة الصلاحيات إلى الأسطح</h2>
+
+<p>
+  القاعدة الذهبية في الـ reference (§04) وفي
+  <code>src/lib/permissions.ts</code> واحدة: <b>ارسم من
+  <code>permissions[]</code> لا من اسم الـ role</b>. الأدوار صفوف في قاعدة
+  بيانات، ويستطيع الـ operator تركيب role رابع بلا redeploy — فأي شرط مكتوب على
+  اسم role هو شرط سيكذب يوماً ما.
+</p>
+
+<p>
+  والتمييز الأدق، وهو الذي يُخطئ فيه الناس عادةً، هو بين الزوجين:
+</p>
+
+<table>
+  <tr><th>الصلاحية</th><th>السؤال الذي تجيبه</th><th>من يحملها</th></tr>
+  <tr>
+    <td><code>accounts.manage</code></td>
+    <td><b>هل يحق لك استعمال سطح الحسابات أصلاً؟</b></td>
+    <td>الـ admin والـ super admin</td>
+  </tr>
+  <tr>
+    <td><code>accounts.manage.all</code></td>
+    <td><b>هل يحق لك مغادرة حسابك؟</b></td>
+    <td>الـ super admin وحده</td>
+  </tr>
+  <tr>
+    <td><code>users.manage</code></td>
+    <td>هل يحق لك استعمال سطح المستخدمين أصلاً؟</td>
+    <td>الـ admin والـ super admin</td>
+  </tr>
+  <tr>
+    <td><code>users.manage.all</code></td>
+    <td>هل يحق لك إدارة مستخدمين خارج حسابك؟</td>
+    <td>الـ super admin وحده</td>
+  </tr>
+</table>
+
+<div class="box danger">
+  <b>الخطأ الذي سيقع إن لم يُكتب صراحةً:</b> حراسة <i>سطح</i> الحسابات بـ
+  <code>accounts.manage.all</code>. النتيجة أن الـ admin — وهو الجمهور الأساسي
+  لهذا السطح — لا يراه إطلاقاً. القاعدة: <b>السطح يُحرَس بـ
+  <code>.manage</code>، والتنقّل بين الحسابات وحده يُحرَس بـ
+  <code>.manage.all</code></b>. وهذا مكتوب أصلاً في تعليق
+  <code>PERMISSIONS.ACCOUNTS_MANAGE_ALL</code> في الـ source.
+</div>
+
+<h3>الخريطة الكاملة لهذه المرحلة</h3>
+
+<table>
+  <tr><th>العنصر في الواجهة</th><th>الصلاحية التي تُظهره</th><th>الـ endpoint خلفه</th></tr>
+  <tr><td>عنصر التنقل «Accounts»</td><td><code>accounts.manage</code></td><td><span class="tag get">GET</span> <code>/accounts</code></td></tr>
+  <tr><td>مبدّل الحساب في الـ header</td><td><code>accounts.manage.all</code></td><td>—</td></tr>
+  <tr><td>زر «حساب جديد»</td><td><code>accounts.manage.all</code></td><td><span class="tag post">POST</span> <code>/accounts</code></td></tr>
+  <tr><td>زر «حذف الحساب»</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag del">DELETE</span> <code>/accounts/{id}</code></td></tr>
+  <tr><td>مفتاح SMS fallback</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag patch">PATCH</span> <code>/accounts/{id}/sms-fallback</code></td></tr>
+  <tr><td>سحب ترتيب الأجهزة</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag put">PUT</span> <code>/accounts/{id}/devices/order</code></td></tr>
+  <tr><td>حجب جهاز (blocked)</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag patch">PATCH</span> <code>/accounts/{id}/devices/{device_id}</code></td></tr>
+  <tr><td>ربط جهاز قائم بالحساب</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag post">POST</span> <code>/accounts/{id}/devices</code></td></tr>
+  <tr><td>إنشاء جهاز داخل الحساب</td><td><code>accounts.manage</code> + النطاق</td><td><span class="tag post">POST</span> <code>/accounts/{id}/devices/create</code></td></tr>
+  <tr><td>عنصر التنقل «Users»</td><td><code>users.manage</code></td><td><span class="tag get">GET</span> <code>/auth/users</code></td></tr>
+  <tr><td>إنشاء / تعديل / حذف مستخدم</td><td><code>users.manage</code></td><td><code>/auth/users…</code></td></tr>
+  <tr><td>إعادة تعيين كلمة المرور</td><td><code>users.manage</code></td><td><span class="tag post">POST</span> <code>/auth/users/{id}/password</code></td></tr>
+  <tr><td>حذف جهاز</td><td><code>devices.delete</code></td><td><span class="tag del">DELETE</span> <code>/devices/{id}</code></td></tr>
+  <tr><td>webhook الجهاز</td><td><code>devices.webhook.read</code> / <code>.write</code></td><td><code>/devices/{id}/webhook</code></td></tr>
+  <tr><td>إنشاء جهاز (المسار العام)</td><td><code>devices.create</code></td><td><span class="tag post">POST</span> <code>/devices</code></td></tr>
+</table>
+
+<div class="box">
+  <b>إخفاء الزر تسهيل، لا حماية.</b> هذا مكتوب حرفياً في رأس
+  <code>src/lib/permissions.ts</code> ويجب أن يبقى صحيحاً: كل route محروس بـ
+  <code>Require(permission)</code> على الـ server، والـ server يرفض الإقلاع إن
+  وُجد route بلا حراسة. ما تفعله الواجهة هو أن تُجنّب المستخدم زراً سيُرفَض —
+  لا أن تمنعه.
+</div>
+
+
+<h2 id="p6"><span class="num">06</span> نموذج المسارات والـ navigation</h2>
+
+<h3>ثلاثة بيوت، وسطح واحد يُشتق</h3>
+
+<p>
+  الصفحة الرئيسية <code>/</code> اليوم هي شبكة أجهزة. في هذه المرحلة تصير
+  <b>موزّعاً</b> يختار السطح من الصلاحيات — بلا أي ذكر لاسم role:
+</p>
+
+<pre dir="ltr"><code><span class="c">// src/lib/surfaces.ts  — derived, never stored; a pure function like the rest of lib/</span>
+<span class="k">export type</span> HomeSurface = <span class="s">'platform'</span> | <span class="s">'account'</span> | <span class="s">'device'</span>
+
+<span class="k">export function</span> homeSurface(granted: <span class="k">readonly string</span>[] | <span class="k">null</span>): HomeSurface {
+  <span class="k">if</span> (hasPermission(granted, PERMISSIONS.ACCOUNTS_MANAGE_ALL)) <span class="k">return</span> <span class="s">'platform'</span>
+  <span class="k">if</span> (hasPermission(granted, PERMISSIONS.ACCOUNTS_MANAGE))     <span class="k">return</span> <span class="s">'account'</span>
+  <span class="k">return</span> <span class="s">'device'</span>
+}</code></pre>
+
+<p>
+  الترتيب مقصود: <code>.manage.all</code> يُفحص أولاً لأنه يتضمن
+  <code>.manage</code>. ولاحظ أن هذه الدالة لا تسمّي role ولا تقرأ
+  <code>user.role</code> — فتمرّ من حارس الـ source بلا استثناء.
+</p>
+
+<h3>جدول الـ routes المقترح</h3>
+
+<table>
+  <tr><th>المسار</th><th>الشاشة</th><th>الحراسة</th></tr>
+  <tr><td><code>/</code></td><td>موزّع: platform / account / device</td><td>session فقط</td></tr>
+  <tr><td><code>/accounts</code></td><td>قائمة الحسابات</td><td><code>accounts.manage</code></td></tr>
+  <tr><td><code>/accounts/:accountId</code></td><td>تفاصيل الحساب — tabs</td><td><code>accounts.manage</code></td></tr>
+  <tr><td><code>/users</code></td><td>قائمة المستخدمين</td><td><code>users.manage</code></td></tr>
+  <tr><td><code>/messaging</code>، <code>/chats</code>، <code>/groups</code>، <code>/account</code>، <code>/misc</code>، <code>/settings</code></td><td>كما هي اليوم</td><td>session + الجهاز المختار</td></tr>
+</table>
+
+<p>
+  الـ tabs داخل <code>/accounts/:accountId</code> ثلاثة:
+  <b>Devices</b> (العضوية والترتيب والحجب)، و<b>Users</b> (مستخدمو هذا الحساب)،
+  و<b>Settings</b> (الـ SMS fallback والحذف). ولاحظ أن الـ admin يصل إلى نفس
+  المسار بمعرّف حسابه هو — الشاشة واحدة، ولا شاشة «admin» منفصلة عن شاشة «super
+  admin». هذا مقصود: شاشتان تفعلان الشيء نفسه ستفترقان بعد ثلاثة أشهر.
+</p>
+
+<h3>«الدخول إلى حساب» — ما هو بالضبط</h3>
+
+<div class="ascii">  /accounts                 (super admin only sees more than one row)
+     │
+     │  click a row  ⇒  enterAccount(id)   ── writes the lens
+     │                                     └─ clears the device selection
+     ▼
+  /accounts/acc_alpha       devices · users · settings
+     │
+     │  "Open this account"  ⇒  navigate('/')
+     ▼
+  the whole existing app, with the device switcher now listing
+  ONLY acc_alpha's devices — chats, messaging, groups, all unchanged
+</div>
+
+<p>
+  وشريط سياق دائم أعلى الشاشة عندما يكون النطاق مُعيَّناً وغير حساب المستخدم:
+  اسم الحساب، ورابط «العودة إلى حسابي». هذا الشريط هو الشيء الوحيد الذي يمنع
+  أخطر خطأ تشغيلي في المرحلة — أن يرسل الـ super admin رسالة من حساب عميل وهو
+  يظن أنه في حسابه.
+</p>
+
+<div class="box warn">
+  <b>مقايضة معمارية مسجَّلة:</b> النطاق في store لا في الـ URL. الفائدة أن كل
+  الشاشات التشغيلية القائمة (<code>/chats</code> وأخواتها) لا تتغير مساراتها ولا
+  تحتاج <code>:accountId</code> في كل route. التكلفة أن رابطاً مُشارَكاً لا يحمل
+  السياق. لذلك مسارات الإدارة وحدها تحمل الـ id في الـ URL وتكتبه في الـ store
+  عند الدخول — وهو حل وسط يعطي روابط قابلة للمشاركة حيث تنفع فعلاً.
+</div>
+
+
+<h2 id="p7"><span class="num">07</span> سطح الحسابات — super admin</h2>
+
+<h3>القائمة</h3>
+
+<p>
+  <span class="tag get">GET</span> <code>/accounts</code> يرجع كل الحسابات
+  للـ super admin، ومقيّداً بحساب المستخدم لمن لا يملك الـ global. أي أن
+  <b>نفس الشاشة</b> تخدم الاثنين: الـ admin يرى صفاً واحداً. لا حاجة لفرع في
+  الكود.
+</p>
+
+<pre dir="ltr"><code>{
+  <span class="s">"account_id"</span>:           <span class="s">"acc_01H..."</span>,
+  <span class="s">"name"</span>:                 <span class="s">"Acme Support"</span>,
+  <span class="s">"sms_fallback_enabled"</span>: <span class="k">false</span>,   <span class="c">// ALWAYS present, no omitempty</span>
+  <span class="s">"created_at"</span>:           <span class="s">"2026-01-14T09:12:00Z"</span>,
+  <span class="s">"updated_at"</span>:           <span class="s">"2026-02-02T11:40:00Z"</span>
+}</code></pre>
+
+<p>
+  الأعمدة المفيدة في الجدول: الاسم، الـ id، عدد الأجهزة (يحتاج نداءً إضافياً —
+  انظر <a href="#p14">§14</a>)، حالة الـ SMS fallback، وتاريخ الإنشاء. وزر
+  «الدخول» على كل صف.
+</p>
+
+<h3>الإنشاء</h3>
+
+<p>
+  <span class="tag post">POST</span> <code>/accounts</code> —
+  <code>accounts.manage.all</code> وحدها. الحقول: <code>account_id</code>
+  اختياري (يُولَّد إن غاب)، و<code>name</code>، و<code>meta_token_ref</code>.
+</p>
+
+<div class="box danger">
+  <b><code>meta_token_ref</code> ليس token.</b> هو <b>اسم متغير بيئة</b> يحمل
+  الـ prefix المُهيّأ (افتراضياً <code>META_TOKEN_</code>). token حرفي، أو اسم
+  خارج الـ prefix، يُرفض. والقيمة <b>لا تُرجَع في أي response إطلاقاً</b> ولا
+  تُسجَّل. فالواجهة: حقل advanced اختياري، مع تحقق شكلي على الـ prefix، ونص
+  مساعد يقول صراحةً «اسم متغير بيئة، لا القيمة»، ولا عرض له بعد الإنشاء أبداً.
+  وهذا الحقل غير موجود على كائن <code>Account</code> — فلا يُتوقَّع في الـ type.
+</div>
+
+<p>
+  الإنشاء ليس upsert: تسمية حساب قائم تُجيب <code>409</code> لا كتابة فوقه.
+</p>
+
+<h3>الحذف — أخطر عملية في المرحلة</h3>
+
+<p>
+  <span class="tag del">DELETE</span> <code>/accounts/{account_id}</code> له
+  ثلاث خصائص تُغيّر شكل الواجهة كلياً:
+</p>
+
+<ol>
+  <li>
+    حساب يملك أجهزة يُرفَض بـ <code>409 ACCOUNT_HAS_DEVICES</code> إلا إذا طُلب
+    الـ cascade صراحةً بـ <code>?purge_devices=true</code>.
+  </li>
+  <li>
+    مع الـ cascade يصير <code>expected_devices</code> <b>مطلوباً</b> ويجب أن
+    يساوي عدد أجهزة الحساب الحالي بالضبط، وإلا
+    <code>409 ACCOUNT_DEVICE_COUNT_MISMATCH</code>. وهو لا يُملأ افتراضياً أبداً:
+    قيمة غائبة لا تُقرأ صفراً.
+  </li>
+  <li>
+    الـ response ليس boolean بل <b>تقرير تنفيذ جزئي</b>:
+    <code>account_deleted</code> و<code>purged_devices</code> و
+    <code>failed_devices</code> و<code>not_attempted_devices</code>.
+  </li>
+</ol>
+
+<div class="box warn">
+  <b>تصميم الواجهة المترتب على ذلك.</b> حوار تأكيد من خطوتين: الأولى تعرض عدد
+  الأجهزة وتطلب كتابة اسم الحساب، والثانية تُرسل <code>expected_devices</code>
+  <b>من قراءة حيّة لعدد الأجهزة</b> لا من قيمة قديمة في الـ cache. والنتيجة
+  تُعرض كتقرير: أي جهاز حُذف، وأيها فشل، وأيها لم يُحاوَل بعد. ولأن العملية
+  قابلة لإعادة التشغيل بأمان — ما لم يُحذف ما زال مملوكاً — يظهر زر «أعد
+  المحاولة» عندما يكون <code>account_deleted === false</code>. رسالة
+  «تم الحذف» على استجابة <code>200</code> بلا قراءة <code>account_deleted</code>
+  ستكذب على المستخدم في كل تنفيذ جزئي.
+</div>
+
+<p>
+  ويُذكر في الـ reference بديل يستحق زراً في الواجهة: <b>لإيقاف اشتراك مؤقتاً،
+  احجب كل جهاز</b> عبر <code>PATCH …/devices/{id}</code> واحتفظ بالبيانات، بدل
+  الحذف الذي يُتلف مفاتيح جلسة WhatsApp ويتطلب وصولاً فيزيائياً لهاتف العميل
+  لإعادة الربط.
+</p>
+
+
+<h2 id="p8"><span class="num">08</span> أجهزة الحساب — العضوية والترتيب والحجب</h2>
+
+<h3>المصدران، ولماذا يلزم ضمّهما</h3>
+
+<div class="ascii">  GET /accounts/{id}/devices        GET /devices?account_id={id}
+  ── rows (authoritative) ──        ── registry (live) ──
+  device_id                         id
+  jid                               phone_number, display_name
+  transport                         state  ← connection state lives ONLY here
+  priority        ← order           jid
+  send_state      ← blocked         created_at
+  fallback_allowed?                 account_id / priority / send_state
+  fallback_reason?                    (only when the caller holds accounts.manage)
+
+            └────────── join on device_id ──────────┘
+                        rows LEFT JOIN registry
+
+  a row with no registry match  ⇒  "not loaded", NOT "disconnected"</div>
+
+<div class="box danger">
+  <b>الضم يسار (rows) لا يمين (registry).</b> الـ rows هي المرجع في العضوية:
+  جهاز موجود في الصفوف ولم يُحمِّله الـ registry <b>ما زال ملكاً للحساب</b>
+  وسيُحاوَل في مسار الرد. عرضه على أنه <code>disconnected</code> كذب — الحالة
+  الصحيحة هي «غير معروفة». وبناء قائمة العضوية من الـ registry يعني حذف أجهزة
+  موجودة فعلاً من واجهة الترتيب، وهو تحديداً ما يُنتج <code>400</code> في
+  الـ endpoint التالي.
+</div>
+
+<h3>الترتيب</h3>
+
+<p>
+  <span class="tag put">PUT</span> <code>/accounts/{id}/devices/order</code>
+  يعيد كتابة الترتيب من <b>القائمة الكاملة المرتبة</b>. قائمة تُسقط جهازاً من
+  الحساب، أو تُكرّر واحداً، أو تسمّي جهاز حساب آخر — تُرفض ولا يُكتب شيء. حد
+  256 عنصراً.
+</p>
+
+<div class="box">
+  <b><code>priority</code>: الأقل يُجرَّب أولاً.</b> والافتراض العمودي هو
+  <code>100</code>، أي «غير مرتَّب». فواجهة السحب يجب أن تعرض <b>الترتيب</b>
+  (الأول، الثاني…) لا الرقم الخام — رقم <code>100</code> لكل الأجهزة سيبدو
+  للمستخدم كأنها كلها بنفس الأولوية، وهو صحيح، لكن عرضه رقماً يدعو إلى تحريره
+  يدوياً وهو ما لا يقبله هذا الـ endpoint.
+</div>
+
+<p>
+  الترتيب والحجب <b>متعامدان</b>: جهاز محجوب يبقى في الترتيب ويُتخطّى عند
+  الإرسال. فلا تُخرجه الواجهة من القائمة عند حجبه — تُظهره في مكانه بشارة
+  واضحة، وإلا فقد المستخدم القدرة على فكّ الحجب.
+</p>
+
+<h3>الحجب</h3>
+
+<p>
+  <span class="tag patch">PATCH</span>
+  <code>/accounts/{id}/devices/{device_id}</code> بقائمة مغلقة:
+  <code>""</code> (صالح) أو <code>"blocked"</code> (مُتخطّى). أي قيمة أخرى
+  <code>400</code>. والقيمة الفارغة <b>شرعية ومطلوبة</b> — هي الطريقة الوحيدة
+  لفكّ الحجب، فلا يجوز أن يُسقطها أي منطق «احذف الحقول الفارغة» في طبقة الـ API.
+  وهذا فخ حقيقي في أي helper يُنظّف الـ payload.
+</p>
+
+<h3><code>fallback_allowed</code> — نصف الجواب</h3>
+
+<div class="box warn">
+  الـ reference صريح: <code>fallback_allowed</code> يجيب «هل تسمح سياسة تبديل
+  القناة»، ولا يعني أن الجهاز جاهز. الإرسال يشترط أيضاً
+  <code>send_state !== "blocked"</code> وجلسة متصلة. فالتسمية في الواجهة
+  <b>«مسموح كـ fallback»</b> لا «جاهز». ولاحظ تعارضاً بين مصدري الوثيقة:
+  النص (§05) يذكر <code>fallback_allowed</code> و<code>fallback_reason</code>
+  على كائن الجهاز داخل الحساب، بينما schema الـ <code>AccountDevice</code> في
+  الـ openapi لا يذكرهما. القرار الآمن: <b>حقول اختيارية</b>، تُعرَض إن وُجدت
+  وتُتجاهَل إن غابت — وهو نفس منطق §09 وإن لم يكن redaction.
+</div>
+
+<h3>إنشاء الأجهزة — التصحيح الذي لا يحتمل التأجيل</h3>
+
+<p>
+  ثلاثة endpoints تُنشئ أو تربط، ولكل واحد معنى مختلف:
+</p>
+
+<table>
+  <tr><th>الـ endpoint</th><th>ما يفعله</th><th>متى يُستعمل في الواجهة</th></tr>
+  <tr>
+    <td><span class="tag post">POST</span> <code>/devices</code></td>
+    <td>ينشئ device slot. الـ reference لا يذكر أنه يربطه بحساب.</td>
+    <td>المسار العام لمن يملك <code>devices.create</code> فقط — مع التحقق من النتيجة.</td>
+  </tr>
+  <tr>
+    <td><span class="tag post">POST</span> <code>/accounts/{id}/devices/create</code></td>
+    <td>ينشئ slot <b>مملوكاً للحساب من أول صف مخزَّن</b> — بلا نافذة يكون فيها بلا مالك.</td>
+    <td>المسار المفضَّل داخل سطح الحساب.</td>
+  </tr>
+  <tr>
+    <td><span class="tag post">POST</span> <code>/accounts/{id}/devices</code></td>
+    <td>يربط slot <b>قائماً</b>. لا ينشئ ولا يضبط priority. جهاز يخص حساباً آخر ⇒ <code>409</code>.</td>
+    <td>«ضمّ جهاز موجود إلى هذا الحساب».</td>
+  </tr>
+</table>
+
+<div class="box danger">
+  <b>سؤال مفتوح يجب حسمه قبل التنفيذ (انظر <a href="#p14">§14</a>، Q-1):</b>
+  هل <code>POST /devices</code> يربط الجهاز بحساب المُنشئ تلقائياً؟ الـ
+  reference لا يقول. إن كان الجواب لا، فإن
+  <code>src/features/devices/create-device-dialog.tsx</code> كما هو ينتج جهازاً
+  بـ <code>account_id: ""</code> — و<code>GET /devices</code> لمستخدم بلا
+  <code>accounts.manage</code> «يرى أجهزة حسابه فقط»، أي أن المستخدم أنشأ للتوّ
+  جهازاً لن يراه أبداً. الافتراض الآمن حتى يُحسم: داخل سطح الحساب استعمل
+  <code>POST /accounts/{id}/devices/create</code>، وفي المسار العام اقرأ
+  <code>account_id</code> من نتيجة الإنشاء واعرض تحذيراً إن كان فارغاً.
+</div>
+
+
+<h2 id="p9"><span class="num">09</span> إعدادات الحساب — SMS fallback والحذف</h2>
+
+<h3>المفتاح</h3>
+
+<p>
+  <span class="tag patch">PATCH</span>
+  <code>/accounts/{id}/sms-fallback</code> بجسم فيه
+  <code>sms_fallback_enabled</code> <b>boolean حقيقي</b> — نص مثل
+  <code>"yes"</code> أو رقم أو حقل غائب يُرفض بـ <code>400</code> ولا يُكتب
+  شيء. العملية idempotent، والقيمة الحالية تُقرأ من
+  <code>GET /accounts</code>.
+</p>
+
+<div class="box warn">
+  <b>مفتاحان، وواحد فقط بيد الواجهة.</b> هذا الـ endpoint يُسلّح <b>الحساب</b>؛
+  والـ deployment يجب أن يحمل منفصلاً إعداد gateway كاملاً
+  (<code>SMS_GATEWAY_URL</code>، <code>SMS_GATEWAY_KEY</code>،
+  <code>SMS_SENDER_ID</code>). تسليح حساب والـ gateway غير مُهيّأ <b>مسموح وليس
+  خطأً</b> — تُخزَّن الحالة وتعمل يوم يُهيّأ الـ gateway. والـ response لا يُبلّغ
+  عن إعداد الـ deployment عمداً. لذلك نص الواجهة يجب ألّا يَعِد بالتسليم: العبارة
+  الصحيحة «مُفعَّل على مستوى الحساب — يعمل متى كان الـ gateway مُهيّأً لدى مشغّل
+  النظام»، لا «رسائل SMS مفعّلة».
+</div>
+
+<p>
+  وما لا يغطيه الـ fallback ويجب أن يُذكر في الواجهة نصاً: الوسائط والملصقات
+  وجهات الاتصال والمواقع والاستطلاعات لا مقابل لها في SMS ولا يُعاد إرسالها
+  أبداً؛ ومستقبِل مجموعة أو رقم لا يُحَل إلى E.164 لا يحصل على SMS؛ ورسالة SMS
+  واحدة كحد أقصى لكل رسالة فاشلة، بلا إعادة محاولة.
+</p>
+
+<h3>أثره على شاشة المحادثات</h3>
+
+<p>
+  عند تفعيله، <code>POST /send/message</code> قد يُرجع
+  <code>channel: "sms"</code>. والقاعدة الإلزامية: <b>اقرأ
+  <code>channel</code> قبل استعمال <code>message_id</code></b> — عند
+  <code>"sms"</code> لا توجد رسالة WhatsApp ولا صف في التخزين، فلا تنتظر ظهورها
+  في <code>GET /chat/{jid}/messages</code>، ولا تبنِ عليها reply أو reaction،
+  و<code>message_id</code> قد يكون فارغاً أصلاً (هو مرجع مشغّل الشبكة). هذا
+  التعديل يقع على شاشة الإرسال القائمة، وهو مرشّح واضح لتذكرة مستقلة صغيرة.
+</p>
+
+
+<h2 id="p10"><span class="num">10</span> إدارة المستخدمين</h2>
+
+<p>
+  المجموعة تحت <code>/auth/users</code>، كلها تتطلب <code>users.manage</code>،
+  وكل عملية عليها فحص إضافي للسقف الامتيازي. هذا هو أدقّ سطح في المرحلة منطقياً
+  — لا لأن الـ endpoints كثيرة، بل لأن دلالات الحقول فيها غير بديهية.
+</p>
+
+<h3>كائن المستخدم في سطح الإدارة</h3>
+
+<pre dir="ltr"><code>{
+  <span class="s">"user_id"</span>, <span class="s">"username"</span>, <span class="s">"email"</span>, <span class="s">"account_id"</span>, <span class="s">"status"</span>,
+  <span class="s">"roles"</span>: [<span class="s">"user"</span>],   <span class="c">// role ids only, sorted</span>
+  <span class="s">"token_epoch"</span>: 3,     <span class="c">// visible so an operator SEES sessions were cut</span>
+  <span class="s">"created_at"</span>, <span class="s">"updated_at"</span>
+}
+<span class="c">// no "permissions" here — the effective union comes from GET /auth/me alone
+// no "password_hash" — the field does not exist on the Go type at all</span></code></pre>
+
+<p>
+  عدم وجود <code>permissions</code> هنا <b>مقصود</b>: الاتحاد النهائي يُقرأ من
+  <code>/auth/me</code> وحده. فلا تحاول الواجهة عرض «صلاحيات هذا المستخدم» في
+  جدول المستخدمين — لا مصدر لها. أقصى ما يُعرض هو الـ role ids المُسندة.
+</p>
+
+<h3>الإنشاء — قاعدة «واحد بالضبط»</h3>
+
+<pre dir="ltr"><code>{
+  <span class="s">"username"</span>: <span class="s">"sara"</span>,          <span class="c">// 2-64 chars, starts with a letter or digit,
+                                 // '@' allowed, STORED LOWER-CASED</span>
+  <span class="s">"password"</span>: <span class="s">"..."</span>,           <span class="c">// 8-72 BYTES, not runes — bcrypt's own limit</span>
+  <span class="s">"email"</span>:    <span class="s">"sara@acme.com"</span>, <span class="c">// optional, unique when non-blank</span>
+
+  <span class="c">// EXACTLY ONE of these two — never both, never neither</span>
+  <span class="s">"account_id"</span>: <span class="s">"acc_01H..."</span>,
+  <span class="s">"account"</span>:    { <span class="s">"account_id"</span>: <span class="s">"acc_new"</span>, <span class="s">"name"</span>: <span class="s">"New Co"</span> },
+
+  <span class="s">"roles"</span>:  [<span class="s">"user"</span>],           <span class="c">// defaults to the LEAST privileged</span>
+  <span class="s">"status"</span>: <span class="s">"active"</span>            <span class="c">// or "disabled" — creating disabled is legitimate</span>
+}</code></pre>
+
+<div class="box">
+  <b>ترجمة ذلك إلى نموذج:</b> اختيار من اثنين (radio) — «إلى حساب قائم» مع
+  select، أو «مع حساب جديد» مع حقلي id واسم. لا يجوز إرسال الاثنين ولا لا شيء:
+  الجمع تعارض يُرفض، والغياب يُرفض بـ <code>ErrAccountRequired</code>. السبب
+  مذكور صراحةً: مستخدم بحساب فارغ لا يرى أي جهاز، فهذه الحالة ممنوعة حتى للحظة
+  واحدة. وإنشاء المستخدم مع حسابه في request واحد يعني أن «أنشئ عميلاً جديداً»
+  عملية واحدة ذرّية — وهو ما يجب أن تعكسه الواجهة، لا خطوتان.
+</div>
+
+<div class="box danger">
+  <b>تحقق كلمة المرور بالـ bytes لا بالمحارف.</b> الحد <code>8–72</code>
+  <b>bytes</b>. كلمة مرور عربية من 30 حرفاً تتجاوز الحد فعلياً بينما
+  <code>value.length</code> يقول 30. التحقق الصحيح:
+  <code>new TextEncoder().encode(password).length</code>. هذا خطأ سيقع حتماً في
+  deployment عربي إن لم يُكتب.
+</div>
+
+<p>
+  و<code>username</code> يُخزَّن lower-cased: يجب أن يُظهر النموذج ذلك أثناء
+  الكتابة (تحويل حي أو نص مساعد)، وإلا بدا للمستخدم أن النظام «غيّر» ما كتبه.
+</p>
+
+<h3>التعديل — دلالة الحقل الغائب</h3>
+
+<div class="box danger">
+  <b>القاعدة الأهم في هذا السطح.</b> كل حقول <code>PATCH</code> اختيارية، و
+  <b>الحقل الغائب لا يُكتب إطلاقاً</b>. الغائب والفارغ شيئان مختلفان: إرسال
+  <code>account_id: ""</code> محاولة تفريغ حساب وتُرفض. و<code>PATCH</code>
+  فارغ تماماً يُرفض بـ <code>400</code> ولا يُعامَل no-op — لأن كل PATCH غير
+  فارغ يُخرج المستخدم من كل جلساته، و«لم يتغير شيء» و«قطعتُ كل جلساته» لا يجوز
+  أن يتشاركا نفس الـ response.
+</div>
+
+<p>
+  الترجمة الهندسية: النموذج يبني الـ payload من <b>الحقول المتسخة فقط</b>
+  (dirty fields)، ويعطّل زر الحفظ ما دام لا شيء متسخاً — فلا يُرسل PATCH فارغ
+  أصلاً. و<code>roles</code> <b>يستبدل</b> المجموعة ولا يدمج فيها: واجهة
+  checkbox متعددة تُرسل المجموعة النهائية كاملة، لا فرقاً.
+</p>
+
+<h3>التحذير الذي يجب أن يسبق كل حفظ</h3>
+
+<p>
+  كل تعديل يزيد <code>token_epoch</code>، فتُرفض فوراً كل الـ access والـ
+  refresh tokens القائمة لذلك المستخدم — بلا نافذة 15 دقيقة. الواجهة يجب أن
+  تقول ذلك قبل الحفظ لا بعده: <b>«سيؤدي هذا إلى إخراج المستخدم من كل أجهزته
+  فوراً»</b>. وقيمة <code>token_epoch</code> تُعرَض في الجدول لأنها موجودة
+  تحديداً ليرى المشغّل أن الجلسات قُطعت فعلاً.
+</p>
+
+<div class="box warn">
+  <b>الحالة الخاصة: تعديل نفسك.</b> admin يعدّل بريده من هذا السطح يقطع جلسته
+  هو. ما يحدث عندها معالَج أصلاً من المرحلة الأولى: الـ 401 يُطلق محاولة refresh
+  واحدة، تفشل، فيُمسح الـ session ويُشتق السبب من
+  <code>refusalReason</code> — access token ما زال حياً وقت الرفض ⇒
+  <code>permissions-changed</code> ⇒ رسالة «تم تحديث صلاحياتك». <b>لا يحتاج
+  الأمر كوداً جديداً</b>، لكنه يحتاج حوار تأكيد صريح: «ستُخرَج أنت من هذه
+  الجلسة».
+</div>
+
+<h3>الرفضات الثلاث التي يجب عرضها بوضوح</h3>
+
+<table>
+  <tr><th>الحالة</th><th>الرمز</th><th>ما تقوله الواجهة</th></tr>
+  <tr>
+    <td>privilege escalation</td><td><code>403</code></td>
+    <td>محاولة منح أو تعديل صلاحية لا يملكها المنفِّذ نفسه — وتشمل تغيير كلمة مرور هدف أعلى منه وحذفه. الرسالة تسمّي السبب: «لا يمكنك تعديل مستخدم يملك صلاحيات لا تملكها».</td>
+  </tr>
+  <tr>
+    <td>self mutation</td><td><code>403</code></td>
+    <td>لا يمكنك حذف أو تعطيل نفسك. (تغيير أدوارك مسموح لأنه لا يمكن إلا أن يُضيّق.) الأفضل: إخفاء الزرين على صفّك أصلاً.</td>
+  </tr>
+  <tr>
+    <td>last admin</td><td><code>409</code></td>
+    <td>لا يمكن إزالة آخر مستخدم قادر على إدارة المستخدمين — لا تعطيلاً ولا حذفاً ولا نزعاً للصلاحية. الرسالة تشرح <i>لماذا</i>: لا يوجد تعافٍ عبر الـ API من هذه الحالة.</td>
+  </tr>
+</table>
+
+<p>
+  و<code>409</code> إضافية على تكرار <code>username</code> أو
+  <code>email</code> أو id الحساب المُضمَّن؛ و<code>404</code> على حساب أو role
+  غير موجود؛ و<code>503</code> على امتلاء طابور الـ bcrypt (أعد المحاولة بعد
+  ثوانٍ). كلها تحتاج إدخالاً في <code>src/lib/auth-messages.ts</code> بجانب
+  <code>PERMISSION_DENIED</code> الموجود.
+</p>
+
+<h3>إعادة تعيين كلمة المرور</h3>
+
+<p>
+  <span class="tag post">POST</span>
+  <code>/auth/users/{user_id}/password</code> — <b>لا حقل
+  <code>current_password</code></b> عمداً: هذه إعادة تعيين إدارية على حساب شخص
+  آخر، وسؤال المدير عن قيمة لا يعرفها شرعاً بلا معنى. تزيد
+  <code>token_epoch</code> <b>وتُبطل كل عائلات الـ refresh tokens</b>. والـ
+  response لا يحمل إلا الـ envelope.
+</p>
+
+<h3>القائمة</h3>
+
+<p>
+  <span class="tag get">GET</span> <code>/auth/users</code> مع
+  <code>limit</code> (افتراضي 100، أقصى 500) و<code>offset</code>. النتيجة
+  <code>results</code> مصفوفة مسطّحة — <b>لا</b> كائن فيه <code>total</code>،
+  فلا يمكن بناء pagination بعدد صفحات معروف: الصحيح هو «التالي/السابق» مبنياً
+  على امتلاء الصفحة. وهذا قيد حقيقي يجب أن يُبنى عليه لا أن يُلتف حوله.
+</p>
+
+
+<h2 id="p11"><span class="num">11</span> تجربة الـ user العادي</h2>
+
+<p>
+  المطلوب هنا أقل بكثير مما يبدو، لأن الـ backend يُضيّق أصلاً: قائمة الأجهزة
+  لمن لا يملك <code>accounts.manage</code> مقصورة على أجهزة حسابه، وجهاز حساب
+  آخر يُجاب <code>404</code>. أي أن <b>التغليف بالحساب واقع فعلاً على الـ
+  wire</b> — ما ينقص هو أن تقوله الواجهة.
+</p>
+
+<table>
+  <tr><th>العنصر</th><th>الحالة اليوم</th><th>المطلوب</th></tr>
+  <tr>
+    <td>قائمة الأجهزة</td><td>مقصورة على الحساب أصلاً (server-side)</td><td>لا تغيير</td>
+  </tr>
+  <tr>
+    <td>صندوق الإرسال</td><td>ظاهر للجميع</td><td>يُخفى بلا <code>messages.send</code> — الـ user لا يملكها</td>
+  </tr>
+  <tr>
+    <td>أزرار pin / archive</td><td>ظاهرة</td><td>تُخفى بلا <code>chats.write</code></td>
+  </tr>
+  <tr>
+    <td>شارة سياق الحساب</td><td>غير موجودة</td><td>تُعرض من <code>user.account_id</code></td>
+  </tr>
+  <tr>
+    <td>حالة «لا أجهزة»</td><td>«أضف جهازاً»</td><td>تُفرَّق: لا أجهزة في الحساب ≠ لا تنتمي إلى حساب</td>
+  </tr>
+</table>
+
+<div class="box warn">
+  <b>فجوة حقيقية:</b> الـ user لا يملك <code>accounts.manage</code>، فلا يستطيع
+  نداء <code>GET /accounts</code>، فلا سبيل له لتحويل <code>account_id</code>
+  إلى <b>اسم</b> حساب. الشارة ستعرض معرّفاً خاماً مثل
+  <code>acc_01H...</code> وهو ليس نصاً يفهمه بشر. خياران: الاكتفاء بالمعرّف
+  مؤقتاً، أو طلب حقل <code>account_name</code> على <code>/auth/me</code> من فريق
+  الـ backend (Q-4 في <a href="#p14">§14</a>). التوصية: اطلب الحقل، واعرض
+  المعرّف حتى يصل.
+</div>
+
+<p>
+  وحالة <code>account_id === ""</code> تستحق نصاً خاصاً: الـ reference يقول إن
+  الفراغ «ليس بلا حساب بعد، بل <b>لا يملك شيئاً</b>»، وإن النظام يرفض إنشاء
+  مستخدم بحساب فارغ. فوجودها يعني مستخدماً قديماً سابقاً لهذه الطبقة، والرسالة
+  الصحيحة «حسابك غير مرتبط بأي حساب — راجع مدير النظام»، لا «لا توجد أجهزة».
+</p>
+
+
+<h2 id="p12"><span class="num">12</span> طبقة الـ API والـ types الجديدة</h2>
+
+<p>
+  الطبقات في هذا الـ repo ثابتة:
+  <code>api/</code> → <code>hooks/</code> + <code>stores/</code> →
+  <code>features/</code> + <code>components/</code> → <code>pages/</code>.
+  لا شيء في الواجهة ينادي axios مباشرة. الجديد المقترح:
+</p>
+
+<table>
+  <tr><th>الملف</th><th>المحتوى</th></tr>
+  <tr>
+    <td><code>src/api/accounts.ts</code></td>
+    <td><code>Account</code>، <code>AccountDevice</code>، <code>DeleteAccountResult</code>، وتسعة نداءات.</td>
+  </tr>
+  <tr>
+    <td><code>src/api/users.ts</code></td>
+    <td><code>AdminUser</code>، <code>CreateUserPayload</code>، <code>UpdateUserPayload</code>، وستة نداءات.</td>
+  </tr>
+  <tr>
+    <td><code>src/stores/account.ts</code></td>
+    <td>نطاق الحساب (<code>gowa-ui.account.v1</code>) — انظر <a href="#p4">§04</a>.</td>
+  </tr>
+  <tr>
+    <td><code>src/lib/surfaces.ts</code></td>
+    <td><code>homeSurface()</code> — اشتقاق نقي من الصلاحيات.</td>
+  </tr>
+  <tr>
+    <td><code>src/hooks/use-accounts.ts</code></td>
+    <td><code>useAccounts</code>، <code>useAccountDevices</code>، <code>useScopedDevices</code>.</td>
+  </tr>
+  <tr>
+    <td><code>src/hooks/use-users.ts</code></td>
+    <td><code>useUsers</code> مع صفحة، والـ mutations.</td>
+  </tr>
+  <tr>
+    <td><code>src/features/accounts/*</code></td>
+    <td>جدول الحسابات، حوار الإنشاء، حوار الحذف بخطوتين، لوح ترتيب الأجهزة، مفتاح SMS.</td>
+  </tr>
+  <tr>
+    <td><code>src/features/users/*</code></td>
+    <td>جدول المستخدمين، نموذج الإنشاء، نموذج التعديل بالحقول المتسخة، حوار كلمة المرور.</td>
+  </tr>
+  <tr>
+    <td><code>src/pages/accounts.tsx</code>، <code>account-detail.tsx</code>، <code>users.tsx</code></td>
+    <td>ثلاث صفحات جديدة في جدول <code>App.tsx</code>.</td>
+  </tr>
+</table>
+
+<h3>مفاتيح الـ query cache</h3>
+
+<div class="box">
+  <b>النطاق جزء من المفتاح، لا شيء خارجه.</b> قائمة أجهزة الحساب أ ليست قائمة
+  أجهزة الحساب ب، ومفتاح <code>['devices']</code> واحد لهما يعني أن دخول حساب
+  يعرض للحظة أجهزة الحساب السابق من الـ cache. المقترح:
+  <code>['devices', accountId]</code>،
+  <code>['accounts']</code>،
+  <code>['account-devices', accountId]</code>،
+  <code>['users', { limit, offset }]</code>.
+  ولاحظ أن <code>App.tsx</code> يُبطل اليوم <code>['devices']</code> على أحداث
+  الـ WebSocket — الإبطال بالبادئة يبقى صحيحاً مع المفتاح الموسَّع.
+</div>
+
+<h3>التعديل على الـ types القائمة</h3>
+
+<p>
+  <code>RegistryDevice</code> في <code>src/api/types.ts</code> لا يحمل
+  <code>account_id</code> ولا <code>priority</code> ولا <code>send_state</code>.
+  والـ reference (§06) يذكرها على كائن الجهاز، بينما وصف
+  <code>GET /devices</code> يقول إنها تظهر «عندما يحمل المُنادي
+  <code>accounts.manage</code>» — أي <b>حضور مشروط</b>. القرار: تُضاف
+  <b>اختيارية</b>، وتُقرأ بفحص الوجود لا بفحص القيمة. وهي ليست من
+  <code>MASKED_FIELDS</code> ولا يجوز إضافتها إليها:
+  <code>src/lib/redaction.ts</code> يخص حقول الرسائل في §09، وخلط الاثنين يخلط
+  سلطتين مختلفتين — وهو ما يمنعه اختبار في <code>source-policy.test.ts</code>.
+</p>
+
+
+<h2 id="p13"><span class="num">13</span> القواعد التي يفرضها الـ codebase</h2>
+
+<p>
+  <code>src/lib/source-policy.test.ts</code> ليس lint اختيارياً — هو اختبار
+  يُفشل الـ build. ثلاث قواعد منه تصطدم مباشرةً بهذه المرحلة:
+</p>
+
+<h3>القاعدة 1 — لا اسم <code>role</code> خارج خمسة ملفات</h3>
+
+<pre dir="ltr"><code>offenders(/\brole\b|\broles\b/, [
+  <span class="s">'src/api/auth.ts'</span>,                        <span class="c">// the wire type</span>
+  <span class="s">'src/api/newsletter.ts'</span>,                  <span class="c">// an unrelated viewer role</span>
+  <span class="s">'src/features/newsletter/newsletter-list.tsx'</span>,
+  <span class="s">'src/stores/auth.ts'</span>,                     <span class="c">// diagnostics(), as identity</span>
+  <span class="s">'src/components/layout/user-menu.tsx'</span>,     <span class="c">// rendered next to the username</span>
+])</code></pre>
+
+<div class="box danger">
+  <b>الاصطدام:</b> سطح إدارة المستخدمين <b>لا يمكن</b> أن يتجنب كلمة
+  <code>roles</code> — الـ payload نفسه يحمل <code>roles: string[]</code>،
+  والجدول يعرضها، والنموذج يُسندها. المخرج ليس تعطيل القاعدة ولا الالتفاف عليها
+  بأسماء مضلِّلة، بل <b>توسيع الـ allowlist بتبرير مكتوب</b> يميّز حالتين:
+  <ul>
+    <li><b>role كقيمة تُسنَد أو تُعرض</b> — مسموح: <code>src/api/users.ts</code>، جدول المستخدمين، نموذج الإسناد.</li>
+    <li><b>role كمصدر سلطة</b> — ممنوع دائماً: أي <code>if</code> أو lookup table أو <code>includes</code> يقرر قدرةً من اسم role.</li>
+  </ul>
+  والقاعدة الحالية تطابق <b>اسم الحقل</b> لا المقارنة — وهو قرار سليم شرحه
+  التعليق نفسه — لذا التوسيع يجب أن يكون <b>قائمة ملفات ضيقة</b>، وأن يُرافقه
+  في نفس الـ ticket تأكيد أن <code>homeSurface()</code> وكل حراسة تنقّل مبنية
+  على <code>permissions[]</code> وحدها.
+</div>
+
+<h3>القاعدة 2 — قارئ واحد لـ <code>permissions</code></h3>
+
+<p>
+  أي مكوّن يقرأ <code>user.permissions</code> مباشرةً يُفشل الـ build. الطريق
+  الوحيد هو <code>@/hooks/use-permissions</code>. وهذا يعني أن
+  <code>homeSurface()</code> — وهي في <code>lib/</code> ونقية — تأخذ المصفوفة
+  <b>وسيطاً</b> ولا تقرأ الـ store، ويأتيها الوسيط من selector في طبقة الـ hooks.
+</p>
+
+<h3>القاعدة 3 — <code>&lt;Can&gt;</code> حارس شاشة لا حارس صف</h3>
+
+<p>
+  كل <code>&lt;Can&gt;</code> يفتح subscription على الـ store. في جدول
+  مستخدمين من 100 صف، <code>&lt;Can&gt;</code> على زر «حذف» في كل صف = 100
+  subscription لجواب واحد لا يتغير. القاعدة المكتوبة في الـ source: ارفع الـ
+  boolean مرة واحدة في الأب واستعمل <code>&amp;&amp;</code> في الصف.
+</p>
+
+<pre dir="ltr"><code><span class="k">const</span> canManage = useHasPermission(PERMISSIONS.USERS_MANAGE)   <span class="c">// once</span>
+{rows.map((row) =&gt; canManage &amp;&amp; &lt;DeleteButton key={row.user_id} … /&gt;)}  <span class="c">// per row</span></code></pre>
+
+<h3>قواعد أخرى تبقى سارية</h3>
+<ul>
+  <li>لا كتابة إلى <code>console</code> في <code>src/</code> إطلاقاً.</li>
+  <li>لا نص من الـ server يُرسم كـ HTML — واسم الحساب واسم المستخدم نصّان من الـ server.</li>
+  <li>الأخطاء تمرّ بـ <code>toApiError</code> وتظهر كـ <code>sonner</code> toasts.</li>
+  <li>الـ envelope يُفكّ بـ <code>results()</code> / <code>envelope()</code> لا يدوياً.</li>
+  <li>كل store مُخزَّن يحمل اسماً بنسخة — <code>gowa-ui.account.v1</code>.</li>
+  <li>منطق نقي جديد ⇒ اختبار Vitest مجاور.</li>
+</ul>
+
+
+<h2 id="p14"><span class="num">14</span> فجوات الـ backend والأسئلة المفتوحة</h2>
+
+<p>
+  هذه ليست عيوباً بالضرورة، لكنها أمور <b>لا تجيب عنها الوثيقة</b> وتؤثر على
+  التصميم. كل واحدة يجب أن تُحسم — بسؤال فريق الـ backend أو بقراءة الـ source —
+  قبل أن تدخل التذكرة التي تعتمد عليها مرحلة <code>/plan</code>.
+</p>
+
+<table>
+  <tr><th>#</th><th>السؤال</th><th>الأثر</th><th>الافتراض الآمن مؤقتاً</th></tr>
+  <tr>
+    <td>Q-1</td>
+    <td>هل <code>POST /devices</code> يربط الجهاز بحساب المُنشئ تلقائياً؟</td>
+    <td><b>عالٍ</b> — يحدد ما إذا كان زر «إضافة جهاز» الحالي يُنتج أجهزة يتيمة.</td>
+    <td>افترض لا. استعمل المسار المُحسَّب بالحساب، وتحقق من <code>account_id</code> في النتيجة.</td>
+  </tr>
+  <tr>
+    <td>Q-2</td>
+    <td>لا يوجد endpoint لسرد الـ roles المتاحة.</td>
+    <td><b>عالٍ</b> — نموذج إسناد الأدوار بلا مصدر. الـ role غير الموجود يُجيب <code>404</code>.</td>
+    <td>اعرض الثلاثة المزروعة، مع حقل حرّ لإدخال id آخر، ورسالة صريحة على 404. واطلب <code>GET /auth/roles</code>.</td>
+  </tr>
+  <tr>
+    <td>Q-3</td>
+    <td><code>GET /auth/users</code> بلا <code>?account_id=</code> وبلا <code>total</code>.</td>
+    <td><b>متوسط</b> — «مستخدمو هذا الحساب» للـ super admin تصفية على العميل، تنكسر فوق 500 مستخدم.</td>
+    <td>صفحات «التالي/السابق»، وتصفية على العميل داخل الصفحة، مع لافتة صريحة. واطلب الـ filter.</td>
+  </tr>
+  <tr>
+    <td>Q-4</td>
+    <td>لا سبيل لمن لا يملك <code>accounts.manage</code> لمعرفة اسم حسابه.</td>
+    <td><b>متوسط</b> — شارة السياق تعرض معرّفاً خاماً للـ user role.</td>
+    <td>اعرض المعرّف. واطلب <code>account_name</code> على <code>/auth/me</code>.</td>
+  </tr>
+  <tr>
+    <td>Q-5</td>
+    <td>لا <span class="tag get">GET</span> <code>/accounts/{id}</code> مفرد ولا تعديل لاسم الحساب.</td>
+    <td><b>منخفض</b> — صفحة التفاصيل تبني من القائمة؛ الاسم غير قابل للتغيير بعد الإنشاء.</td>
+    <td>ابنِ من <code>GET /accounts</code>. لا تعرض حقل اسم قابلاً للتحرير.</td>
+  </tr>
+  <tr>
+    <td>Q-6</td>
+    <td>لا endpoint لفكّ ربط جهاز عن حسابه (detach).</td>
+    <td><b>منخفض</b> — نقل جهاز بين حسابين غير ممكن؛ الربط بحساب آخر <code>409</code>.</td>
+    <td>لا تعرض إجراء «نقل». الحذف وإعادة الإنشاء هو المسار الوحيد، وهو مُتلِف.</td>
+  </tr>
+  <tr>
+    <td>Q-7</td>
+    <td>عدد أجهزة الحساب غير موجود على كائن <code>Account</code>.</td>
+    <td><b>منخفض</b> — عمود «الأجهزة» في القائمة يحتاج نداءً لكل صف، أو يُحذف.</td>
+    <td>احذف العمود من القائمة واعرض العدد في صفحة التفاصيل. حوار الحذف يقرأه حياً.</td>
+  </tr>
+  <tr>
+    <td>Q-8</td>
+    <td>تعارض: <code>fallback_allowed</code> / <code>fallback_reason</code> في النص وليس في الـ schema.</td>
+    <td><b>منخفض</b></td>
+    <td>حقول اختيارية، تُعرض إن وُجدت.</td>
+  </tr>
+</table>
+
+<div class="box">
+  <b>ملاحظة منهجية.</b> الـ reference نفسه يقول إن
+  <code>openapi.yaml</code> «لا يوثّق بعد كل ما ورد أعلاه» وإن الأولوية لنصّ
+  المستند عند التعارض. الأسئلة أعلاه صيغت على هذا الأساس: حيث سكت الاثنان، لا
+  تخمين — سؤال.
+</div>
+
+
+<h2 id="p15"><span class="num">15</span> تقسيم التذاكر المقترح</h2>
+
+<p>
+  ثماني تذاكر، في ثلاث موجات، كل واحدة outcome واحد قابل للمراجعة والتراجع
+  مستقلاً — بحسب فلسفة الـ small change في <code>CLAUDE.md</code>. الترقيم يكمل
+  المرحلة الأولى (1–5).
+</p>
+
+<h3>الموجة أ — الأساس (لا شاشة جديدة)</h3>
+
+<table>
+  <tr><th>#</th><th>العنوان</th><th>المخرج</th><th>يعتمد على</th></tr>
+  <tr>
+    <td>6</td>
+    <td>Add the account scope store and the account-aware device lens</td>
+    <td><code>stores/account.ts</code>، <code>useScopedDevices</code>، مسح اختيار الجهاز ذرّياً عند تغيير النطاق، مفاتيح cache موسَّعة بالنطاق.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>Add typed accounts and users API clients with their query hooks</td>
+    <td><code>api/accounts.ts</code>، <code>api/users.ts</code>، <code>hooks/use-accounts.ts</code>، <code>hooks/use-users.ts</code>، ورسائل الأخطاء الجديدة في <code>auth-messages.ts</code>. بلا UI.</td>
+    <td>—</td>
+  </tr>
+</table>
+
+<h3>الموجة ب — الأسطح الإدارية</h3>
+
+<table>
+  <tr><th>#</th><th>العنوان</th><th>المخرج</th><th>يعتمد على</th></tr>
+  <tr>
+    <td>8</td>
+    <td>Derive navigation and the home surface from permissions</td>
+    <td><code>lib/surfaces.ts</code>، جدول routes جديد، قائمة تنقل مشروطة، شريط سياق الحساب، وتوسيع الـ allowlist في <code>source-policy.test.ts</code> بتبرير مكتوب.</td>
+    <td>6</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td>Build the accounts list and the account lifecycle</td>
+    <td><code>/accounts</code>، الإنشاء (بحقل <code>meta_token_ref</code> المُقيَّد)، والحذف بحوار خطوتين وتقرير تنفيذ جزئي قابل لإعادة التشغيل.</td>
+    <td>7، 8</td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td>Build the account devices surface: membership, reply order, send state</td>
+    <td>tab الأجهزة: ضمّ المصدرين، سحب الترتيب بإرسال القائمة الكاملة، الحجب وفكّه، والربط والإنشاء داخل الحساب — بما فيه تصحيح مسار إنشاء الجهاز (Q-1).</td>
+    <td>7، 9</td>
+  </tr>
+  <tr>
+    <td>11</td>
+    <td>Build the users administration surface</td>
+    <td><code>/users</code> وtab المستخدمين: القائمة بصفحات، الإنشاء بقاعدة «واحد بالضبط»، التعديل بالحقول المتسخة مع تحذير قطع الجلسات، إعادة تعيين كلمة المرور بتحقق bytes، والحذف — مع الرفضات الثلاث معروضة بوضوح.</td>
+    <td>7، 8</td>
+  </tr>
+  <tr>
+    <td>12</td>
+    <td>Add the account settings tab: SMS fallback and channel labelling</td>
+    <td>مفتاح الـ SMS بنص لا يَعِد بالتسليم، ووسم رسائل <code>channel === "sms"</code> في شاشة الإرسال مع قراءة <code>channel</code> قبل <code>message_id</code>.</td>
+    <td>7، 9</td>
+  </tr>
+</table>
+
+<h3>الموجة ج — التغليف</h3>
+
+<table>
+  <tr><th>#</th><th>العنوان</th><th>المخرج</th><th>يعتمد على</th></tr>
+  <tr>
+    <td>13</td>
+    <td>Wrap the operational screens in the account context</td>
+    <td>إخفاء صندوق الإرسال وأزرار pin/archive من <code>permissions[]</code>، وempty states تفرّق بين «الحساب بلا أجهزة» و«لا تنتمي إلى حساب»، وشارة سياق للـ user role.</td>
+    <td>8</td>
+  </tr>
+</table>
+
+<div class="box ok">
+  <b>لماذا هذا الترتيب.</b> 6 و7 لا تُنتجان شيئاً مرئياً — وهذا مقصود: هما
+  الأرضية، ومراجعتهما مراجعة عقد لا مراجعة بكسل. و8 هي أول تذكرة يظهر فيها أثر
+  للمستخدم، وهي أيضاً التي تحسم اشتباك القاعدة في <a href="#p13">§13</a> — فيُحسم
+  مرة واحدة بدل أن يتكرر في كل تذكرة بعدها. و9 قبل 10 لأن شاشة أجهزة الحساب
+  تعيش داخل صفحة تفاصيل الحساب. و13 أخيراً لأنها الوحيدة التي تلمس شاشات قائمة
+  ومستقرة.
+</div>
+
+<div class="box warn">
+  <b>ما ليس في هذه المرحلة (out of scope مقترح).</b> لوحات
+  <code>metadata_debug</code>، وعرض الـ transcript، وشارة
+  <code>sent_via</code> / <code>sent_by</code>، وتكامل Chatwoot، و
+  <code>admin.debug.toggle</code> و<code>admin.retention.run</code>. كلها ميزات
+  <b>عرض</b> فوق الرسائل، لا علاقة لها بطبقة الحساب — وهي مرحلة ثالثة طبيعية.
+  خلطها هنا يضاعف حجم المراجعة بلا فائدة.
+</div>
+
+
+<h2 id="p16"><span class="num">16</span> مصفوفة التحقق</h2>
+
+<p>
+  ما يجب أن يُثبَت في <code>/verify</code> لكل تذكرة، بصياغة قابلة للتنفيذ.
+  هذه ليست acceptance criteria — هي مادة خام لها.
+</p>
+
+<table>
+  <tr><th>المحور</th><th>يُتحقَّق بـ</th></tr>
+  <tr>
+    <td>لا اشتقاق من role</td>
+    <td><code>npm test</code> يُمرّر <code>source-policy.test.ts</code>؛ والـ allowlist الموسَّع يحمل تبريراً مكتوباً لكل ملف مضاف.</td>
+  </tr>
+  <tr>
+    <td>سلامة النطاق</td>
+    <td>اختبار وحدة: <code>enterAccount(id)</code> يُصفّر <code>selectedDeviceId</code> في نفس الكتابة؛ ولا مفتاح cache للأجهزة بلا نطاق فيه.</td>
+  </tr>
+  <tr>
+    <td>الـ admin يرى سطحه</td>
+    <td>principal يحمل <code>accounts.manage</code> بلا <code>.all</code> ⇒ عنصر Accounts ظاهر، ومبدّل الحساب مخفي.</td>
+  </tr>
+  <tr>
+    <td>PATCH لا يُرسل فارغاً</td>
+    <td>اختبار على باني الـ payload: لا حقل غير متسخ يُرسل؛ ولا حقل بقيمة <code>""</code> على <code>account_id</code>؛ وزر الحفظ معطَّل بلا تغيير.</td>
+  </tr>
+  <tr>
+    <td>كلمة المرور بالـ bytes</td>
+    <td>اختبار: كلمة عربية من 30 محرفاً تُرفض؛ وكلمة لاتينية من 8 محارف تُقبل.</td>
+  </tr>
+  <tr>
+    <td>الترتيب كامل</td>
+    <td>اختبار: الـ payload المُرسَل إلى <code>order</code> يساوي مجموعة أجهزة الحساب من مصدر الصفوف بالضبط، بلا نقص ولا تكرار.</td>
+  </tr>
+  <tr>
+    <td>الحذف صادق</td>
+    <td>اختبار: response بـ <code>account_deleted: false</code> لا يُعرض كنجاح، ويُظهر زر إعادة المحاولة وقوائم الأجهزة الثلاث.</td>
+  </tr>
+  <tr>
+    <td>الحقول المشروطة</td>
+    <td>اختبار: جهاز بلا <code>account_id</code> في الـ payload لا يُعرَض بحساب فارغ، بل بحالة «غير معروف».</td>
+  </tr>
+  <tr>
+    <td>الأثر على الـ runtime</td>
+    <td>لا تعديل على <code>vite.config.ts</code> ولا <code>package.json</code> ولا <code>index.html</code> ولا ملفات CI — بيان صريح في كل <code>verify.md</code>.</td>
+  </tr>
+</table>
+
+
+<footer>
+  <p>
+    <b>الخطوة التالية.</b> اقرأ <a href="#p14">§14</a> أولاً: ثمانية أسئلة، اثنان
+    منها (Q-1 و Q-2) يُغيّران التصميم لا التفاصيل. ثم اعتمد أو عدّل تقسيم
+    <a href="#p15">§15</a>، وابدأ بـ <code>/start-ticket</code> للتذكرة 6.
+  </p>
+  <p class="muted">
+    وثيقة دراسة — <code>docs/gowa-phase2-accounts-rbac-study-ar.html</code>.
+    مصدرها <code>docs/gowa-frontend-reference-ar.html</code> والـ source تحت
+    <code>src/</code> بعد ticket <code>z8pmx9md71</code>. لا تُعدّل ملفات
+    الـ deployment runtime ولا تُغني عن أي stage في الـ workflow.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>
