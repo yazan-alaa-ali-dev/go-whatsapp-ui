@@ -1,17 +1,11 @@
 import { useState } from 'react'
-import {
-  LayoutDashboard,
-  Menu,
-  MessagesSquare,
-  Send,
-  Settings,
-  UserRound,
-  Users,
-  Wrench,
-} from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { AccountContextBar } from '@/components/layout/account-context-bar'
+import { AccountSwitcher } from '@/components/layout/account-switcher'
 import { DeviceSwitcher } from '@/components/layout/device-switcher'
 import { Logo } from '@/components/layout/logo'
+import { visibleNavGroups, type NavGroup } from '@/components/layout/navigation'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
 import { UserMenu } from '@/components/layout/user-menu'
 import { WsBadge } from '@/components/layout/ws-badge'
@@ -19,40 +13,22 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { PasskeyDialog } from '@/features/session/passkey-dialog'
+import { usePermissions, useHasPermission } from '@/hooks/use-permissions'
+import { PERMISSIONS } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
-const navGroups = [
-  {
-    label: 'Overview',
-    items: [{ to: '/', label: 'Devices', icon: LayoutDashboard }],
-  },
-  {
-    label: 'Messaging',
-    items: [
-      { to: '/messaging', label: 'Messaging', icon: Send },
-      { to: '/chats', label: 'Chats', icon: MessagesSquare },
-    ],
-  },
-  {
-    label: 'Directory',
-    items: [
-      { to: '/groups', label: 'Groups', icon: Users },
-      { to: '/account', label: 'Account', icon: UserRound },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { to: '/misc', label: 'Channels & Calls', icon: Wrench },
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ],
-  },
-]
-
-function NavContent({ onNavigate }: { onNavigate?: () => void }) {
+/**
+ * The entries, rendered.
+ *
+ * `groups` arrives as a **prop** and this component reads no store, which is not
+ * incidental: it is rendered twice — the sidebar and the mobile sheet — so a hook
+ * call here would undo the hoisting in `AppShell` and open two subscriptions and
+ * run two filter passes for one answer that is the same in both places.
+ */
+function NavContent({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
   return (
     <nav className="flex flex-col gap-4">
-      {navGroups.map((group) => (
+      {groups.map((group) => (
         <div key={group.label} className="flex flex-col gap-1">
           <p className="text-muted-foreground px-3 text-[11px] font-medium tracking-wider uppercase">
             {group.label}
@@ -85,14 +61,37 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
 /**
  * The shell every application route renders inside.
  *
- * It no longer gates on anything: reaching it at all means `RequireSession`
- * already established a session, and the connect screen it used to redirect to
- * when the health probe failed has been replaced by the login screen, which
- * carries that diagnosis itself now.
+ * It gates on no *session*: reaching it at all means `RequireSession` already
+ * established one, and the connect screen it used to redirect to when the health
+ * probe failed has been replaced by the login screen, which carries that
+ * diagnosis itself now.
+ *
+ * What it does gate on, since z8pmx9mf17, is `permissions[]` — and it does so
+ * with exactly **two** subscriptions however far the navigation table grows:
+ * one array read for the entries, one boolean for the account switcher. Both are
+ * hoisted here; `NavContent` takes its groups as a prop, and nothing per entry
+ * or per row reads the store.
+ *
+ * `usePermissions()` returns the store's own array (or the frozen
+ * `NO_PERMISSIONS`), so the snapshot is stable and `visibleNavGroups` runs in
+ * render over it — never as a selector, which would return a fresh array every
+ * call and produce the `useSyncExternalStore` loop that constant exists to
+ * prevent.
+ *
+ * The stated cost: this re-renders when the `user` object's identity changes,
+ * which `storeTokenPair` does on a refresh carrying a principal — roughly twice
+ * an hour. The routed subtree is spared because `<Outlet/>` hands back the same
+ * element identity out of route context and React bails out; the header subtree
+ * does re-render, and it is four cheap components.
  */
 export function AppShell() {
   const location = useLocation()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const groups = visibleNavGroups(usePermissions())
+  // `accounts.manage.all` — *may you leave your own account*. The narrower
+  // `accounts.manage` opens the accounts surface and answers nothing about
+  // moving between accounts (reference §04).
+  const mayLeaveOwnAccount = useHasPermission(PERMISSIONS.ACCOUNTS_MANAGE_ALL)
 
   return (
     <div className="flex min-h-svh">
@@ -101,7 +100,7 @@ export function AppShell() {
           <Logo />
         </div>
         <ScrollArea className="flex-1 px-2 py-4">
-          <NavContent />
+          <NavContent groups={groups} />
         </ScrollArea>
       </aside>
 
@@ -115,12 +114,17 @@ export function AppShell() {
             </SheetTitle>
           </SheetHeader>
           <ScrollArea className="flex-1 px-2 pb-4">
-            <NavContent onNavigate={() => setMobileNavOpen(false)} />
+            <NavContent groups={groups} onNavigate={() => setMobileNavOpen(false)} />
           </ScrollArea>
         </SheetContent>
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* Above the header, deliberately. The device switcher below it is the
+            control that will hand this operator one of the foreign account's
+            devices — a warning printed underneath the thing it warns about is a
+            warning in the wrong place. */}
+        <AccountContextBar />
         <header className="flex h-14 items-center justify-between gap-2 border-b px-4">
           <div className="flex items-center gap-2 md:hidden">
             <Button
@@ -134,6 +138,7 @@ export function AppShell() {
             <Logo />
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {mayLeaveOwnAccount && <AccountSwitcher />}
             <DeviceSwitcher />
             <WsBadge />
             <ThemeToggle />

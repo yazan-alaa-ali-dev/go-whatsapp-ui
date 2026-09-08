@@ -9,7 +9,7 @@ created_at: 2026-09-07
 updated_at: 2026-09-07
 links:
   clickup: "https://app.clickup.com/t/z8pmx9mf16"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/6"
 ---
 
 # Ticket: 6 · Add the account scope store and the accounts/users API layer
