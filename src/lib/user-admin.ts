@@ -1,9 +1,4 @@
-import type {
-  AdminUser,
-  CreateUserPayload,
-  UpdateUserPayload,
-  UserStatus,
-} from '@/api/users'
+import type { AdminUser, CreateUserPayload, UpdateUserPayload, UserStatus } from '@/api/users'
 import { toApiError } from '@/lib/api-error'
 import type { AdminRejection } from '@/lib/auth-messages'
 import { displayText } from '@/lib/surfaces'
@@ -93,6 +88,56 @@ export const MAX_DISPLAY = 60
  * is compared against a literal.
  */
 export const SEEDED_ROLES: readonly string[] = Object.freeze(['user', 'admin', 'super_admin'])
+
+/**
+ * The seeded ids whose scope is the **whole deployment** rather than one account.
+ *
+ * A data table, not an authority read. It answers "which of the offered options
+ * is a global one", which is a fact about the backend's seeded roles; it never
+ * answers "what may this person do" — that is `@/lib/permissions`, always.
+ *
+ * It is a list rather than one constant because the backend may seed another
+ * global role, and because a set makes the classification the shape it actually
+ * is. `SEEDED_ROLES` above stays the complete three: the edit dialog uses it to
+ * tell a seeded id from an operator-composed one, and that question does not
+ * change with who is asking.
+ */
+export const GLOBALLY_SCOPED_ROLES: readonly string[] = Object.freeze(['super_admin'])
+
+/**
+ * Which seeded roles this principal should be **offered** when creating a user.
+ *
+ * **The argument is a permission, never a role.** An account administrator holds
+ * `users.manage` and not `users.manage.all`, and the backend refuses privilege
+ * escalation — "you cannot grant a permission you do not hold yourself" — with a
+ * `403`. So offering them `super_admin` is offering a control that will be
+ * refused, which is precisely what this phase exists to stop.
+ *
+ * **This reverses a decision recorded in `z8pmx9mf1a`,** which left the option
+ * showing for everyone and said an administrator who ticked it "gets the
+ * server's 403". That was right about the hazard it was avoiding and wrong about
+ * the remedy. The hazard is deriving a capability from a **role name** —
+ * `if (signedInUser.role === 'super_admin')` — because roles are database rows an
+ * operator recomposes without a redeploy (reference §04), so such a check lies
+ * the first time a fourth role appears. Taking a **permission** as the argument
+ * avoids that entirely: a composed role holding `users.manage.all` is offered the
+ * option, and a `super_admin` stripped of it is not, which is the correct
+ * behaviour in both directions and is not expressible by a role-name comparison.
+ *
+ * A boolean rather than the permission array, following `mayEnterAccount` in
+ * `@/lib/surfaces`: this module stays free of `@/lib/permissions`, and
+ * `@/hooks/use-permissions` remains the single reader of `permissions[]`.
+ *
+ * **Hiding is an affordance, never enforcement.** The free-text role field beside
+ * these checkboxes still accepts any id — it must, because an operator can
+ * compose roles this UI has never heard of — so a determined account
+ * administrator can still submit `super_admin` and still receive the `403`. What
+ * this removes is the *invitation*.
+ */
+export function assignableRoles(mayGrantGlobalRoles: boolean): readonly string[] {
+  if (mayGrantGlobalRoles) return SEEDED_ROLES
+  return SEEDED_ROLES.filter((seeded) => !GLOBALLY_SCOPED_ROLES.includes(seeded))
+}
 
 /**
  * The page size the UI asks for, and the ceiling the server enforces.
