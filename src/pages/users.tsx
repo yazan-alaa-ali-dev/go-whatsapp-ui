@@ -1,27 +1,23 @@
-import { UsersRound } from 'lucide-react'
-import { EmptyState } from '@/components/shared/empty-state'
 import { PageHeader } from '@/components/shared/page-header'
+import { UsersPanel } from '@/features/user-admin/users-panel'
 
 /**
- * `/users` — routed and guarded here, filled in by a later ticket.
+ * `/users` — every identity that may sign in to this server.
  *
- * The users surface is the one that will finally need `roles[]` on screen, as a
- * value assigned and displayed and never as a source of authority. That
- * distinction, and the narrowed source-policy exemption it rests on, is already
- * settled in `src/api/users.ts`; the screen itself is its own change.
+ * The screen itself is `UsersPanel`, which the account detail screen also
+ * renders with an account fixed. This route renders it unfiltered.
  *
- * What is real here: the route exists, behind the session guard and behind
- * `users.manage`, and a principal without it is told so.
+ * The route and its `users.manage` guard were put in place by z8pmx9mf17; a
+ * principal without the permission never reaches this file.
  */
 export default function UsersPage() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Users" description="The identities that may sign in to this server." />
-      <EmptyState
-        icon={UsersRound}
-        title="The users list is not built yet"
-        hint="This route and its permission guard are in place. The list, user creation, editing and the credential reset arrive with the users surface."
+      <PageHeader
+        title="Users"
+        description="The identities that may sign in to this server. Every change to one signs it out of every device it holds."
       />
+      <UsersPanel />
     </div>
   )
 }

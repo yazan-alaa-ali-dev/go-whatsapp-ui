@@ -5,7 +5,9 @@ import { PermissionDenied } from '@/components/shared/permission-denied'
 import { IdText } from '@/components/shared/id-text'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AccountDevicesPanel } from '@/features/account-devices/account-devices-panel'
+import { UsersPanel } from '@/features/user-admin/users-panel'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useHasPermission } from '@/hooks/use-permissions'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -22,10 +24,10 @@ import { useAuth } from '@/stores/auth'
  * a shared link to `/chats` context-free — so the administrative routes carry the
  * id and write it, and a shared link to one of *those* restores the context.
  *
- * z8pmx9mf19 fills the screen with the devices surface. **There is no `Tabs`
- * shell here**, deliberately: a tab strip with one tab is structure built for a
- * ticket that has not been written. The users tab (10) and the settings tab (11)
- * introduce it when there is a second thing to switch between.
+ * z8pmx9mf19 filled the screen with the devices surface and deferred the `Tabs`
+ * shell to whichever ticket brought a second thing to switch between, on the
+ * grounds that a tab strip with one tab is structure built for a ticket that has
+ * not been written. z8pmx9mf1a is that ticket: **Devices** and **Users**.
  */
 export default function AccountDetailPage() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -65,6 +67,10 @@ export default function AccountDetailPage() {
 
 function AccountDetail({ accountId }: { accountId: string }) {
   const { data: accounts } = useAccounts()
+  // Hoisted here rather than inside the tab strip: it decides whether a tab
+  // exists at all, and `GET /auth/users` requires the permission, so a tab
+  // without it would manufacture a 403 for anyone who clicked it.
+  const mayManageUsers = useHasPermission(PERMISSIONS.USERS_MANAGE)
   // The device count that stood here in z8pmx9mf18 is gone, and it removed a
   // duplicate RENDERING rather than a duplicate request: two observers of
   // accountDevicesKey(id) share one cache entry and one fetch either way. The
@@ -92,7 +98,25 @@ function AccountDetail({ accountId }: { accountId: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <IdText value={accountId} />
       </div>
-      <AccountDevicesPanel accountId={accountId} />
+      {/* No `forceMount`, deliberately: Radix unmounts inactive content, so the
+          users tab issues no `GET /auth/users` until somebody opens it. The
+          cost is that the devices panel refetches when the tab is switched back
+          — bounded by its own 30-second staleTime, and the right trade against
+          a request on every visit to an account for a tab nobody looked at. */}
+      <Tabs defaultValue="devices">
+        <TabsList>
+          <TabsTrigger value="devices">Devices</TabsTrigger>
+          {mayManageUsers && <TabsTrigger value="users">Users</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="devices">
+          <AccountDevicesPanel accountId={accountId} />
+        </TabsContent>
+        {mayManageUsers && (
+          <TabsContent value="users">
+            <UsersPanel accountId={accountId} />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }

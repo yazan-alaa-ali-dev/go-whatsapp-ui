@@ -199,6 +199,32 @@ describe('the credential the login form handles (z8pmx9md6z, AC-25)', () => {
         // sanctions — "the request type declares it" — and it is all the file
         // does: no value is held, stored or read back.
         'src/api/users.ts',
+        // z8pmx9mf1a: the users administration surface. Five files, enumerated
+        // rather than discovered at implement time — the advisory panel's point
+        // was that four unplanned entries added under pressure is how a
+        // narrowed rule becomes a bare exemption.
+        //
+        // The rule is a case-insensitive SUBSTRING over the whole file, so it
+        // catches identifiers, UI copy and an aria-label alike. Only two of
+        // these five hold a value:
+        //
+        //   user-admin.ts          — PASSWORD_MIN_BYTES, passwordError, and the
+        //                            byte-length validator. Measures, never holds.
+        //   create-user-dialog     — holds one in useState until the request.
+        //   reset-password-dialog  — the same, for somebody else's account.
+        //   users-panel.tsx        — imports and mounts the reset dialog.
+        //   user-row.tsx           — an aria-label reading "Reset the password
+        //                            of …". Copy, and it stays accurate rather
+        //                            than being reworded to dodge a regex.
+        //
+        // The exemption is narrowed by the rules under "the users surface holds
+        // a credential" below, which apply to ALL of these files rather than to
+        // two named ones — so widening this list cannot widen what is allowed.
+        'src/lib/user-admin.ts',
+        'src/features/user-admin/users-panel.tsx',
+        'src/features/user-admin/user-row.tsx',
+        'src/features/user-admin/create-user-dialog.tsx',
+        'src/features/user-admin/reset-password-dialog.tsx',
       ]),
       'the password lives in the login form’s own state and is discarded after the request; auth-messages.ts names it in copy, never as a value',
     ).toEqual([])
@@ -280,6 +306,28 @@ describe('rights come from permissions[], never from a role name (z8pmx9md71)', 
         // the field and nothing else, so a read, a rename, a lookup table or a
         // bracket access still fails the build.
         'src/api/users.ts',
+        // z8pmx9mf1a: the users administration surface — the ticket that finally
+        // puts roles on screen. They are ASSIGNED and DISPLAYED here, which is
+        // the distinction the study (§13) draws and which the `api/users.ts`
+        // entry above could only express by "declare and never read".
+        //
+        // That treatment cannot be copied here, and the advisory panel is why:
+        // it works one file over only because every mention there is a
+        // `roles?: string[]` declaration line. `user-admin.ts` declares no
+        // interface — it imports the wire types — and must legitimately read the
+        // field about ten times (set comparison, omission, the seeded list), so
+        // a declarations-equal-mentions count could never hold. Asserting
+        // something unsatisfiable is worse than asserting nothing: it gets
+        // deleted, and the exemption is what survives.
+        //
+        // What narrows these five instead is the rule immediately below, which
+        // bans the SHAPE that makes a role authority — a role value compared
+        // against a literal — across every one of them.
+        'src/lib/user-admin.ts',
+        'src/features/user-admin/users-panel.tsx',
+        'src/features/user-admin/user-row.tsx',
+        'src/features/user-admin/create-user-dialog.tsx',
+        'src/features/user-admin/edit-user-dialog.tsx',
       ]),
       'decide from permissions[] — see src/lib/permissions.ts; a role name is not authority',
     ).toEqual([])
@@ -921,5 +969,248 @@ describe('the account devices surface joins on the rows and pays no per-row cost
     expect(accounts, 'send_state travels as a value, including when it is empty').toMatch(
       /\{\s*send_state:\s*sendState\s*\}/,
     )
+  })
+})
+
+describe('the users surface holds a credential and displays a role (z8pmx9mf1a)', () => {
+  const DECISIONS = 'src/lib/user-admin.ts'
+  const PANEL = 'src/features/user-admin/users-panel.tsx'
+  const ROW = 'src/features/user-admin/user-row.tsx'
+  const CREATE = 'src/features/user-admin/create-user-dialog.tsx'
+  const EDIT = 'src/features/user-admin/edit-user-dialog.tsx'
+  const RESET = 'src/features/user-admin/reset-password-dialog.tsx'
+  /** Every file the two exemptions above admit. The counter-rules cover all of them. */
+  const SURFACE = [DECISIONS, PANEL, ROW, CREATE, EDIT, RESET]
+  /** The two that actually hold a password in component state. */
+  const HOLDS_PASSWORD = [CREATE, RESET]
+
+  function sourceOf(path: string): string {
+    const found = SOURCES.find(([candidate]) => candidate === path)
+    expect(found, `${path} should be in the module graph`).toBeTruthy()
+    return found![1]
+  }
+
+  it('RULE: no role value is compared against a literal anywhere in the surface', () => {
+    // What narrows the `roles` exemption from a grant into a permission to
+    // display. The study's §13 rule 1 and the reference's golden rule (§04):
+    // permissions are compile-time constants, roles are database rows an
+    // operator composes without a redeploy — so `role === 'admin'` is a decision
+    // this UI may never make, and it is the shape every role-as-authority bug
+    // takes. The sibling bracket-access rule already covers `ROLE_CAPS[r]`.
+    //
+    // Not a declarations-count rule, deliberately. That treatment works for
+    // src/api/users.ts only because that file declares and never reads; this
+    // surface must read the field to compare two sets and to omit an empty one,
+    // so a count could never hold — and an unsatisfiable assertion is one that
+    // gets deleted, leaving the bare exemption behind.
+    // The literal must be NON-EMPTY, which is the whole precision of the rule.
+    // `role.trim() !== ''` is a blank-entry filter and appears three times in
+    // this surface legitimately; `role === 'admin'` is the authority read. A
+    // first draft that banned both would have been either deleted or worked
+    // around within a ticket, which is the failure mode this file exists to
+    // avoid — so the pattern requires at least one character inside the quotes.
+    for (const path of SURFACE) {
+      expect(
+        /\broles?\b[^\n]*(===|!==|==|!=)\s*['"`][^'"`]/.test(sourceOf(path)),
+        `${path}: a role name is not authority — decide from permissions[], see src/lib/permissions.ts`,
+      ).toBe(false)
+    }
+  })
+
+  it('RULE: the surface never measures the seeded role list against who you are', () => {
+    // The other half of the same hazard, and the shape a "tidy" fix would take:
+    // hiding the super_admin checkbox unless the signed-in principal holds that
+    // role. That is a capability derived from a role name — exactly what this
+    // ticket is built to prevent — and it is recorded in plan.md as a deliberate
+    // non-fix. An admin who ticks the box gets the server's 403; hiding is an
+    // affordance and the server is the only authority.
+    for (const path of SURFACE) {
+      expect(
+        /SEEDED_ROLES\s*\.\s*(some|every|filter|find)\s*\([^)]*\b(user|principal|granted|permissions)\b/.test(
+          sourceOf(path),
+        ),
+        `${path}: the seeded list is a set of checkbox options, never a comparison against who you are`,
+      ).toBe(false)
+    }
+  })
+
+  it('RULE: no password reaches a toast, a template literal or a query key', () => {
+    // The exemption above lets these files NAME a password. This is what they
+    // may not do with one. `passwordError` states a byte COUNT and never the
+    // value — asserted in user-admin.test.ts — and nothing else renders one.
+    for (const path of HOLDS_PASSWORD) {
+      const source = sourceOf(path)
+      expect(
+        /toast[^\n]*\bpassword\b|`[^`]*\$\{\s*password\s*\}/.test(source),
+        `${path}: a toast is a rendered node like any other; a credential has no business in one`,
+      ).toBe(false)
+      expect(
+        /Key\(\s*\{[^}]*password|queryKey:\s*\[[^\]]*password/.test(source),
+        `${path}: a query key is stored in the cache and outlives the component`,
+      ).toBe(false)
+    }
+  })
+
+  it('RULE: neither password dialog renders the server’s own text for a failure', () => {
+    // AC-31, and the finding that changed this ticket most. `toActionErrorMessage`
+    // returns apiError.message verbatim for any non-403, so a 400 rejecting one
+    // of these bodies — and a validation error naming the offending field is the
+    // ordinary shape of a 400 — would print a credential inside the dialog that
+    // is still holding it.
+    //
+    // Closed the way this repository has already closed it twice:
+    // createFailure / CREATE_FAILED_REDACTED for meta_token_ref, and
+    // webhookSaveFailure / WEBHOOK_SAVE_FAILED_REDACTED for the webhook signing
+    // secret. This is the third, asserted the same way — the decision must be
+    // called, and the escape hatch must be unreachable.
+    for (const path of HOLDS_PASSWORD) {
+      const source = sourceOf(path)
+      expect(source, `${path} must classify the failure before rendering anything`).toMatch(
+        /passwordFailure\(error\)/,
+      )
+      expect(source).toContain('PASSWORD_FAILED_REDACTED')
+      expect(
+        /toActionErrorMessage/.test(source),
+        `${path}: a rejection can quote the field it rejected, and the field here is a password`,
+      ).toBe(false)
+    }
+    // And the redacted sentence is a literal naming no value, as its two
+    // siblings are — interpolating into it is the one edit that would break it.
+    const sentence =
+      sourceOf(DECISIONS).match(/PASSWORD_FAILED_REDACTED =\s*\n?\s*'[^']*'/)?.[0] ?? ''
+    expect(sentence, 'the redacted sentence should be a plain literal').not.toBe('')
+    expect(sentence).not.toContain('${')
+  })
+
+  it('RULE: the decision module reads no query cache, so a detail can only be what was sent', () => {
+    // collisionDetail and notFoundDetail name what THIS CLIENT submitted, which
+    // is what makes them legitimate: the operator typed those values a second
+    // ago, so echoing them adds no bits to the enumeration oracle the server's
+    // joined 409/404 already withholds.
+    //
+    // The shortcut this forecloses is a "helpful" scan of the loaded page for a
+    // matching username. That would split what the server deliberately joined
+    // AND be wrong — the page is one page of an endpoint with no total and no
+    // account filter, so an absent match means "not on this page", never
+    // "available". Same provenance guarantee, and the same two names, as the
+    // delete-account dialog's rule above.
+    expect(
+      /getQueryData|getQueriesData/.test(sourceOf(DECISIONS)),
+      'a detail is built from the submitted payload alone — see collisionDetail',
+    ).toBe(false)
+  })
+
+  it('RULE: no operator-controlled string is interpolated raw into a rendered sentence', () => {
+    // AC-32. A username, an email or a free-text role id is operator-chosen
+    // text, and this surface can CREATE one carrying a bidi override — its own
+    // username validator is deliberately permissive after the first character,
+    // because being stricter than the server rejects input the server would
+    // have taken. React escapes HTML; it does not neutralise U+202E, which
+    // reorders the sentence around it — including the one authorising a delete.
+    //
+    // Every such value goes through displayText() from @/lib/surfaces first: the
+    // same strip-and-cap accountName has used since z8pmx9mf17, extracted rather
+    // than copied so a character added to the class closes every site at once.
+    // Each interpolation is examined on its own rather than the file as a
+    // whole: `${displayText(user.username, MAX_DISPLAY)}` names `.username` and
+    // is exactly what the rule wants, so a file-wide "does it mention
+    // .username inside a ${}" test would flag the correct code and pass the
+    // wrong code sitting next to it. The unit is the interpolation.
+    for (const path of SURFACE) {
+      const raw = (sourceOf(path).match(/\$\{[^}]*\}/g) ?? []).filter(
+        (interpolation) =>
+          /\.(username|email)\b/.test(interpolation) && !interpolation.includes('displayText'),
+      )
+      expect(
+        raw,
+        `${path}: wrap it in displayText() — a bidi override reorders what is rendered around it`,
+      ).toEqual([])
+    }
+  })
+
+  it('RULE: both destructive confirmations show the raw id beside the sanitised name', () => {
+    // The other half of AC-32, and the answer surfaces.ts already gives to a
+    // homoglyph: `admin` and `аdmin` (Cyrillic а) cannot be told apart by
+    // reading, so a name "cannot be sanitised into honesty, but it can be shown
+    // next to an id the operator can compare". The delete confirmation lives in
+    // the panel; the reset has its own file.
+    for (const path of [PANEL, RESET]) {
+      expect(sourceOf(path), `${path} must render the target's raw user_id`).toMatch(/<IdText/)
+    }
+  })
+
+  it('RULE: nothing in the users surface ends a session', () => {
+    // AC-20's "no new session-handling code was added for this", made runnable.
+    // A self-edit ending your own session is z8pmx9md70's existing path — the
+    // 401 spends one refresh, it fails against the new epoch, the session is
+    // cleared, and refusalReason derives permissions-changed, which
+    // SIGN_OUT_NOTICES already renders. This ticket adds the warning BEFORE it
+    // and nothing else.
+    //
+    // The four-name pattern the permission-denied surface already uses:
+    // endRefusedSession and refreshSession are the two spellings a self-edit
+    // handler would actually reach for, and a list of signOut/clearSession/
+    // endSession would have missed both while duplicating two rules that exist.
+    for (const path of SURFACE) {
+      expect(sourceOf(path), `${path} must add no session teardown`).not.toMatch(
+        /\bsignOut\b|\bendRefusedSession\b|\brefreshSession\b|\bNavigate\b/,
+      )
+    }
+  })
+
+  it('RULE: the row mounts no dialog and opens no store subscription', () => {
+    // The study's §13 rule 3, applied to the second list this codebase renders.
+    // A permission hook per row is one store subscription per row for an answer
+    // that does not vary; a dialog per row is a mutation per row. The panel owns
+    // one instance of each, and the row takes props.
+    const row = sourceOf(ROW)
+    for (const dialog of ['Dialog', 'AlertDialog', 'Sheet']) {
+      expect(
+        new RegExp(`<${dialog}[\\s/>]`).test(row),
+        `${dialog} belongs to the panel, mounted once for the whole list`,
+      ).toBe(false)
+    }
+    expect(
+      /\buse[A-Z]\w*\(/.test(row),
+      'the row takes props; every hook belongs to the panel',
+    ).toBe(false)
+    expect(sourceOf(PANEL)).toMatch(/<UserRow/)
+  })
+
+  it('RULE: the panel resolves account names once, not once per row', () => {
+    // accountName() scans the account list and runs a regex on every call, so
+    // calling it inside .map() over a page of a hundred rows is a hundred scans
+    // and a hundred regex passes on every re-render. accounts.tsx gets away with
+    // it because it renders one row per account; this list does not.
+    const panel = sourceOf(PANEL)
+    expect(panel, 'the panel builds a lookup map once').toMatch(/new Map<string, string>\(\)/)
+    expect(
+      /\.map\(\(user\)[\s\S]{0,400}accountName\(/.test(panel),
+      'resolve the label into a Map with useMemo and index it per row',
+    ).toBe(false)
+  })
+
+  it('RULE: the pager is frozen while a page is in flight', () => {
+    // keepPreviousData means the rows on screen belong to the PREVIOUS page
+    // while the next one is loading, and this endpoint has no total to correct
+    // the impression with. A pager left live advances the offset past a page
+    // nobody saw, and fans out several in-flight queries over several cached
+    // pages.
+    expect(sourceOf(PANEL), 'both pager buttons wait for the real page').toMatch(
+      /isPlaceholderData\s*\|\|\s*\w+\.isFetching/,
+    )
+  })
+
+  it('RULE: the users list invents no total and no page count', () => {
+    // REQ-2. The response is a flat array; there is no count to build a numbered
+    // pager from, and pageState returns four fields precisely so a caller cannot
+    // branch on the wrong one. A "page 3 of 12" here would be fabricated, and
+    // this is a real constraint to build on rather than to work around.
+    for (const path of [PANEL, DECISIONS]) {
+      expect(
+        /\btotalPages\b|\bpageCount\b|\btotalCount\b/.test(sourceOf(path)),
+        `${path}: paging is next/previous on whether the page came back full`,
+      ).toBe(false)
+    }
   })
 })

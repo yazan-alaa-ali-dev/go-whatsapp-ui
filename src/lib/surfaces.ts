@@ -209,6 +209,34 @@ export const MAX_ACCOUNT_NAME = 60
 const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/gu
 
 /**
+ * Operator-controlled text, made safe to render.
+ *
+ * **Extracted from `accountName` below rather than copied out of it**
+ * (z8pmx9mf1a). The users surface renders three more strings of exactly this
+ * class — a username, an email, and a free-text role id — and it renders them
+ * inside the sentence that authorises a delete. A second copy of the regex in
+ * that module is the divergence this module exists to prevent, and the strip is
+ * the kind of rule that must have one owner: a `Cf` character added to the class
+ * has to close every site at once.
+ *
+ * The users surface is also where the loop closes on itself. Its username
+ * validator is deliberately permissive after the first character — being
+ * stricter than the server rejects input the server would have taken — so a
+ * `U+202E`-bearing username is creatable *through that form* and would then be
+ * reordered into a confirmation. React escapes HTML; it does not neutralise
+ * bidi.
+ *
+ * Absence collapses to the empty string rather than to `null`, because every
+ * caller of this one renders into a cell that must exist either way.
+ * `accountName` keeps its own `null`, which means something different there —
+ * see its header.
+ */
+export function displayText(value: string | null | undefined, max: number): string {
+  const cleaned = value?.replace(CONTROL_OR_FORMAT, '').trim() ?? ''
+  return cleaned.length <= max ? cleaned : `${cleaned.slice(0, max)}…`
+}
+
+/**
  * What to call the account with this id, or `null` when there is nothing to
  * call it.
  *
@@ -232,9 +260,12 @@ export function accountName(
   accountId: string,
 ): string | null {
   const found = accounts?.find((account) => account.account_id === accountId)
-  const cleaned = found?.name.replace(CONTROL_OR_FORMAT, '').trim() ?? ''
-  if (cleaned === '') return null
-  return cleaned.length <= MAX_ACCOUNT_NAME ? cleaned : `${cleaned.slice(0, MAX_ACCOUNT_NAME)}…`
+  // `displayText` performs the strip and the cap; the `null` is this function's
+  // own and is not folded into it. "There is nothing to call this account" is a
+  // different answer from "the name sanitised to nothing", and only this caller
+  // has a reason to distinguish them — it renders the raw id instead.
+  const cleaned = displayText(found?.name, MAX_ACCOUNT_NAME)
+  return cleaned === '' ? null : cleaned
 }
 
 /**
