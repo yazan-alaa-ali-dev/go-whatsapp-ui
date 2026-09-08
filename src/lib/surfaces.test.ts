@@ -3,6 +3,7 @@ import { PERMISSIONS } from '@/lib/permissions'
 import {
   accountName,
   accountScopeEntry,
+  deviceEmptyReason,
   homeSurface,
   isForeignScope,
   MAX_ACCOUNT_NAME,
@@ -341,5 +342,34 @@ describe('a lens naming an account that is gone (z8pmx9mf18, AC-21b, TC-9a)', ()
   it('normalises both sides before comparing', () => {
     expect(scopeIsGone([{ account_id: ' acc-c ' }], 'acc-c')).toBe(false)
     expect(scopeIsGone(LIST, ' acc-a ')).toBe(false)
+  })
+})
+
+describe('deviceEmptyReason (AC-22, AC-23)', () => {
+  it('says "no devices" for a user who belongs to an account', () => {
+    expect(deviceEmptyReason('acc-a')).toBe('no-devices')
+    expect(deviceEmptyReason(' acc-a ')).toBe('no-devices')
+  })
+
+  it('RULE: a blank account_id means the user OWNS NOTHING, never "every account"', () => {
+    // The reference is explicit that the empty string "resolves to an EMPTY
+    // device set, not to every un-accounted device", and that the system refuses
+    // to create a user with a blank account — so this state is an identity that
+    // predates the account layer, and "you have no devices yet" is the wrong
+    // diagnosis entirely. The message it selects names an administrator and
+    // offers no control.
+    expect(deviceEmptyReason('')).toBe('no-account')
+  })
+
+  it('reads whitespace as blank, as every other id in this module does', () => {
+    expect(deviceEmptyReason('   ')).toBe('no-account')
+    expect(deviceEmptyReason('\t\n')).toBe('no-account')
+  })
+
+  it('reads an absent principal as having no account', () => {
+    // Pre-boot and mid-teardown. There is no account to name, and offering to
+    // add a device to it would be the wrong invitation either way.
+    expect(deviceEmptyReason(null)).toBe('no-account')
+    expect(deviceEmptyReason(undefined)).toBe('no-account')
   })
 })

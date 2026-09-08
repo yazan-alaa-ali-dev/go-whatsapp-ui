@@ -5,6 +5,44 @@ export interface SendResult {
   status: string
 }
 
+/**
+ * The wire shape of `POST /send/message` — `SendResult` plus one field.
+ *
+ * **Only this endpoint can deliver by a channel other than WhatsApp, so only this
+ * endpoint reports one.** Every other `/send/*` response keeps `SendResult`
+ * unchanged, which is why the field goes on a type of its own rather than being
+ * added to the shared one as an optional.
+ *
+ * `channel` is typed `string`, not `'whatsapp' | 'sms'`, and that is deliberate:
+ * the server owns that enum. A closed union would make the "a value we do not
+ * recognise" branch in `@/lib/send-channel` unreachable to the type checker while
+ * leaving it perfectly reachable at runtime, and that branch is the one that stops
+ * a future third channel being read as WhatsApp.
+ *
+ * This type is exported for `@/lib/send-channel` alone. Callers receive
+ * `SendMessageResult` below.
+ */
+export interface SendMessageWire extends SendResult {
+  /** `whatsapp` or `sms` today. Absent on an ordinary send. */
+  channel?: string
+}
+
+/**
+ * What a caller of `sendText` receives: the wire shape **with `message_id`
+ * withheld**.
+ *
+ * The reference makes reading `channel` before using `message_id` an obligation
+ * on the caller — when the channel is `sms` the id is the carrier's own
+ * reference, may be empty, writes no WhatsApp message row, and works with no
+ * message endpoint. An obligation on the caller is a rule that gets forgotten, so
+ * it is removed from the caller instead: `result.message_id` does not compile,
+ * and the id is available only through `usableMessageId` in `@/lib/send-channel`,
+ * which answers `null` unless the channel permitted one.
+ *
+ * `tsc -b` is therefore what enforces the rule, rather than a reviewer noticing.
+ */
+export type SendMessageResult = Omit<SendMessageWire, 'message_id'>
+
 export interface TextPayload {
   phone: string
   message: string
@@ -17,8 +55,13 @@ export function textRequest(payload: TextPayload): ApiRequest {
   return { method: 'POST', path: '/send/message', json: clean(payload) }
 }
 
-export function sendText(payload: TextPayload): Promise<SendResult> {
-  return exec(textRequest(payload))
+/**
+ * The one send that can answer with a channel. Executed as the wire shape and
+ * returned as the narrowed one, so the id leaves this module unreadable — see
+ * `SendMessageResult`.
+ */
+export function sendText(payload: TextPayload): Promise<SendMessageResult> {
+  return exec<SendMessageWire>(textRequest(payload))
 }
 
 export interface MediaPayload {

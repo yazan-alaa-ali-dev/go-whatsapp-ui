@@ -1214,3 +1214,260 @@ describe('the users surface holds a credential and displays a role (z8pmx9mf1a)'
     }
   })
 })
+
+describe('the operational screens are honest about the account and the channel (z8pmx9mf1b)', () => {
+  const CHATS = 'src/pages/chats.tsx'
+  const VIEW = 'src/features/chat/message-view.tsx'
+  const MEDIA = 'src/features/chat/message-media.tsx'
+  const CONTROLS = 'src/features/chat/chat-controls.tsx'
+  const CHAT_LIST = 'src/features/chat/chat-list.tsx'
+  const PARTICIPANTS = 'src/features/group/participants-panel.tsx'
+  const MISC = 'src/pages/misc.tsx'
+  const DASHBOARD = 'src/pages/dashboard.tsx'
+  const CARD = 'src/features/account-settings/sms-fallback-card.tsx'
+  const NOTICE = 'src/components/shared/delivery-notice.tsx'
+  const CHANNEL = 'src/lib/send-channel.ts'
+  const TEXT_FORM = 'src/features/send/text-form.tsx'
+
+  /** Every component that renders one of the two unwindowed lists this phase names. */
+  const LISTS = [VIEW, MEDIA, CONTROLS, CHAT_LIST, PARTICIPANTS]
+
+  function source(path: string): string {
+    const found = SOURCES.find(([candidate]) => candidate === path)
+    expect(found, `${path} should be in the module graph`).toBeTruthy()
+    return found![1]
+  }
+
+  it('RULE: neither unwindowed list opens a permission subscription of its own', () => {
+    // The study's §13 rule 3 and the header of src/components/shared/can.tsx,
+    // which names these two files as the reason it is written the way it is.
+    // message-view.tsx holds the composer's `draft` in the same component that
+    // renders the message rows, so a hook there is re-evaluated on every
+    // KEYSTROKE; message-media.tsx is instantiated per row; participants-panel
+    // renders its full list with no windowing at all.
+    //
+    // The rule covers the participants panel even though this ticket adds no
+    // guard to it — that is the point. AC-20's constraint on that file is
+    // negative, and an assertion is what keeps a negative true.
+    for (const path of LISTS) {
+      expect(
+        /\buseHasPermission\(|\buseHasAnyPermission\(|\buseHasAllPermissions\(|\busePermissions\(/.test(
+          source(path),
+        ),
+        `${path}: hoist the boolean into the parent and pass it as a prop — see src/components/shared/can.tsx`,
+      ).toBe(false)
+      expect(
+        /<Can[\s/>]/.test(source(path)),
+        `${path}: <Can> is a screen guard; every instance opens its own store subscription`,
+      ).toBe(false)
+    }
+  })
+
+  it('RULE: nothing inside the message list instantiates a query hook per row', () => {
+    // message-media.tsx called useAppInfo() once per media-bearing message —
+    // one query observer and one store subscription each, re-run on every
+    // keystroke — for one shared, staleTime: Infinity answer. `base_path` is a
+    // prop now, hoisted beside the permission booleans for the same reason.
+    expect(
+      /\buseAppInfo\(/.test(source(MEDIA)),
+      `${MEDIA}: base_path arrives as a prop; the hook belongs above the list`,
+    ).toBe(false)
+    expect(source(CHATS), 'chats.tsx hoists base_path once for the whole list').toMatch(
+      /useAppInfo\(\)/,
+    )
+  })
+
+  it('RULE: the message row is memoised, so a keystroke does not re-render the page', () => {
+    // The same row treatment already enforced for account-device-row and
+    // user-row. `messages` is useMemo'd on query.data?.data, so each message
+    // identity is stable and the other props are a boolean and a string — the
+    // memo actually holds.
+    expect(source(VIEW), 'wrap MessageBubble in React.memo').toMatch(/const MessageBubble = memo\(/)
+  })
+
+  it('RULE: `message_id` and `channel` of a send result are named in two files only', () => {
+    // The reference makes reading `channel` before using `message_id` an
+    // obligation on the CALLER, and an obligation on the caller is a rule that
+    // gets forgotten. So it is removed from the caller: `SendMessageResult` omits
+    // the id from the type, `tsc -b` refuses any other reader, and this rule
+    // stops a second `as SendMessageWire` cast being written to get around it.
+    //
+    // src/api/message.ts and src/api/newsletter.ts declare unrelated
+    // `message_id` fields of their own endpoints and are not send results.
+    const readers = SOURCES.filter(
+      ([path, text]) =>
+        /\.message_id\b|\bSendMessageWire\b/.test(text) &&
+        !['src/api/send.ts', CHANNEL].includes(path),
+    ).map(([path]) => path)
+    expect(
+      readers,
+      'read the id through usableMessageId() — it answers null unless the channel permitted one',
+    ).toEqual([])
+
+    // And the cast that licenses it exists once per accessor and nowhere else.
+    const casts = source(CHANNEL).match(/as SendMessageWire/g) ?? []
+    expect(
+      casts.length,
+      'the cast is this module’s licence and stays countable',
+    ).toBeLessThanOrEqual(2)
+  })
+
+  it('RULE: the channel decision fails safe — only an absent field or the literal is WhatsApp', () => {
+    // `channel === 'sms' ? 'sms' : 'whatsapp'` fails OPEN: the first third
+    // channel this server reports is read as WhatsApp and a foreign reference is
+    // handed back as a WhatsApp message id. The wire type is `string` precisely
+    // so the third branch stays reachable.
+    expect(source(CHANNEL), 'an unrecognised channel is its own answer').toMatch(/'unrecognised'/)
+    expect(
+      source('src/api/send.ts'),
+      'the server owns this enum, so the field is a string',
+    ).toMatch(/channel\?: string/)
+  })
+
+  it('RULE: the carrier reference reaches a rendered node only through displayText', () => {
+    // Gateway-chosen text arriving through the server into this app's own chrome,
+    // beside a sentence about what happened to somebody's message — the same
+    // position surfaces.ts describes for an account name, and it gets the same
+    // strip-and-cap. React escapes HTML; it does not neutralise U+202E.
+    expect(source(CHANNEL), 'carrierReference sanitises before anything renders').toMatch(
+      /displayText\(/,
+    )
+    const notice = source(NOTICE)
+    expect(notice, 'the notice renders the sanitised value, never the raw field').toMatch(
+      /carrierReference\(/,
+    )
+    // A text child and nothing else: no href, no download, no clipboard. An
+    // identifier that works with no endpoint has nowhere useful to be pasted.
+    expect(
+      /href=|navigator\.clipboard|<a[\s>]/.test(notice),
+      `${NOTICE}: the reference is a text child; offering to move it suggests it works somewhere`,
+    ).toBe(false)
+  })
+
+  it('RULE: an SMS result re-reads no chat history and is never announced as a WhatsApp send', () => {
+    // An SMS delivery writes NO WhatsApp message row, so invalidating the
+    // conversation asks for a row that does not exist and leaves the user
+    // watching their message fail to appear.
+    expect(source(VIEW), 'the invalidation is gated on the channel').toMatch(
+      /shouldReadChatHistory\(result\)/,
+    )
+    for (const path of [VIEW, TEXT_FORM]) {
+      expect(
+        /successMessage:\s*'Message sent'/.test(source(path)),
+        `${path}: the toast names the channel — a static "Message sent" is a claim about WhatsApp`,
+      ).toBe(false)
+      expect(source(path), `${path} reports the channel that delivered it`).toMatch(
+        /successMessage:\s*sendToast/,
+      )
+    }
+  })
+
+  it('RULE: each gated control is hidden, never disabled, and its guard is a hoisted boolean', () => {
+    // §11's advice and the rule <Can> was built on: absence hides. A disabled
+    // control still announces that the capability exists, which is the thing
+    // being spared.
+    const chats = source(CHATS)
+    for (const permission of ['MESSAGES_SEND', 'CHATS_WRITE', 'MESSAGES_READ']) {
+      expect(chats, `chats.tsx reads PERMISSIONS.${permission} once, above the list`).toMatch(
+        new RegExp(`PERMISSIONS\\.${permission}`),
+      )
+    }
+    expect(source(MISC), 'misc.tsx gates call rejection').toMatch(/PERMISSIONS\.CALLS_REJECT/)
+
+    // The message list itself is NOT guarded on messages.read, which grants
+    // downloading media only (reference §04) — guarding it would hide every
+    // conversation from an ordinary user entitled to see it.
+    expect(
+      /mayDownloadMedia\s*&&\s*<ScrollArea|mayDownloadMedia\s*\?\s*\(?\s*<ScrollArea/.test(
+        source(VIEW),
+      ),
+      'messages.read is download-only; the message list comes with chats.read',
+    ).toBe(false)
+
+    // A hidden control must also stop its request, or the guard manufactures the
+    // 403 it existed to spare the user.
+    expect(source(MEDIA), 'the download query is disabled without the permission').toMatch(
+      /enabled:\s*open\s*&&\s*canDownload/,
+    )
+
+    // No permission-driven `disabled` anywhere in the four.
+    for (const path of [VIEW, MEDIA, MISC, CHATS]) {
+      expect(
+        /disabled=\{[^}]*\b(may|can)[A-Z]\w*/.test(source(path)),
+        `${path}: absence hides a control; it never renders it disabled`,
+      ).toBe(false)
+    }
+  })
+
+  it('RULE: a successful fallback write invalidates the list the switch reads from', () => {
+    // useAccounts() carries staleTime: 5 * 60_000 and is this switch's only
+    // source — there is no GET /accounts/{id}. Without this line the mutation
+    // succeeds, the cache keeps answering with the pre-toggle boolean, and the
+    // switch flips back under the operator's hand on a write the server stored.
+    const card = source(CARD)
+    expect(card, 'invalidate accountsKey() on success').toMatch(
+      /onSuccess[\s\S]{0,200}invalidateQueries\(\{\s*queryKey:\s*accountsKey\(\)/,
+    )
+    // And it reads the value it displays rather than fetching it: the parent
+    // already holds the list.
+    expect(
+      /\buseAccounts\(/.test(card),
+      `${CARD}: the state arrives as a prop; a second observer on the same key reads a value already here`,
+    ).toBe(false)
+  })
+
+  it('RULE: the fallback body is a boolean, and no cleaner is named anywhere near it', () => {
+    // `false` is a VALUE here, not an absent field: a helper that dropped it
+    // would turn "disarm" into a 400 the screen could not explain. The body is
+    // built literally in src/api/accounts.ts — which a rule above already forbids
+    // from naming a payload cleaner — and this keeps the card away from one too.
+    expect(
+      /\bclean\(|api\/request/.test(source(CARD)),
+      `${CARD}: pass the boolean; never run this payload through a helper that drops falsy fields`,
+    ).toBe(false)
+    expect(
+      source('src/api/accounts.ts'),
+      'setAccountSmsFallback takes a real boolean and writes the field literally',
+    ).toMatch(/setAccountSmsFallback\(\s*accountId: string,\s*enabled: boolean,?\s*\)/)
+  })
+
+  it('RULE: the device surface shows the raw account id and resolves no name', () => {
+    // GET /accounts requires accounts.manage, and dashboard.tsx is reached only
+    // through home.tsx's `device` arm — a principal holding neither accounts
+    // permission. useAccounts() there is an observer that can NEVER resolve, and
+    // mounting it would falsify that hook's own header. The id is what is
+    // available (study §14, Q-4); a name is not invented in its place.
+    const dashboard = source(DASHBOARD)
+    expect(dashboard, 'the chip renders the raw id').toMatch(/<IdText value=\{accountId\}/)
+    expect(
+      /\buseAccounts\(|\baccountName\(/.test(dashboard),
+      `${DASHBOARD}: this principal cannot call GET /accounts — show the id, do not fetch a name`,
+    ).toBe(false)
+    // And it reaches the lens not at all: for this principal scopedDeviceFilter
+    // answers null, so the scope cannot narrow the list they are looking at.
+    // (The lens allowlist above is therefore untouched by this ticket.)
+    expect(
+      /stores\/account/.test(dashboard),
+      `${DASHBOARD}: the account is the principal's own, always`,
+    ).toBe(false)
+  })
+
+  it('RULE: the two empty states are distinct, and the blank one offers no control', () => {
+    // "This account has no devices" invites you to add one; "you belong to no
+    // account" means there is nowhere to add one TO. The reference says the
+    // system refuses to create a user with a blank account, so that state is an
+    // identity predating the account layer and the only useful next step is a
+    // person — which is why every add-device control on the screen goes, not
+    // just the empty state's own action.
+    const dashboard = source(DASHBOARD)
+    expect(dashboard, 'the branch is the pure decision, not an inline comparison').toMatch(
+      /deviceEmptyReason\(/,
+    )
+    expect(dashboard).toMatch(/does not belong to an account/)
+    expect(dashboard).toMatch(/has no devices yet/)
+    expect(
+      dashboard,
+      'the header’s create control is hidden too, or AC-23 passes on the empty state and fails on the screen',
+    ).toMatch(/belongsToAnAccount\s*\?\s*<CreateDeviceDialog\s*\/>/)
+  })
+})
