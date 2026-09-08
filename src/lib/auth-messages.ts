@@ -18,12 +18,7 @@ import type { SessionEndReason } from '@/stores/auth'
  */
 
 export type LoginErrorKind =
-  | 'credentials'
-  | 'rate-limited'
-  | 'not-configured'
-  | 'busy'
-  | 'network'
-  | 'unknown'
+  'credentials' | 'rate-limited' | 'not-configured' | 'busy' | 'network' | 'unknown'
 
 export interface Notice {
   title: string
@@ -265,6 +260,11 @@ export type AdminRejection =
   | 'self-mutation'
   | 'last-administrator'
   | 'password-hashing-busy'
+  | 'device-not-available'
+  | 'device-id-taken'
+  | 'device-belongs-elsewhere'
+  | 'account-not-found'
+  | 'device-order-refused'
 
 export const ADMIN_REJECTIONS: Record<AdminRejection, Notice> = {
   // 409 ACCOUNT_HAS_DEVICES (code inferred from the reference's prose).
@@ -315,6 +315,43 @@ export const ADMIN_REJECTIONS: Record<AdminRejection, Notice> = {
     title: 'This is the last administrator',
     description:
       'At least one active user must be able to administer users, so this one cannot be deleted, disabled, or stripped of that permission. There is no way to recover from that state through the API. Give another user the permission first.',
+  },
+  // 404 on any device endpoint (z8pmx9mf19). The one notice on this table that
+  // exists to say LESS than the caller knows: a device belonging to another
+  // account answers 404 with a body identical to a device that does not exist,
+  // "because doing so would confirm the device's existence to a caller who may
+  // not address it" (reference §06). So this never says "you do not have
+  // permission for this device" — the backend deliberately refuses to tell the
+  // two apart, and repeating a guess here would hand back the oracle it withheld.
+  'device-not-available': {
+    title: 'That device is not available',
+    description:
+      'The id you submitted names no device you can address — either it does not exist, or it belongs to another account. The server answers the same way for both, on purpose, so there is nothing more to know from here. Check the id.',
+  },
+  // 409 from POST /accounts/{id}/devices/create.
+  'device-id-taken': {
+    title: 'That device id is already taken',
+    description:
+      'Nothing was created and the existing device was not taken over. Choose a different id, or leave the field empty to have one generated. If the device you meant already exists, attach it instead of creating it.',
+  },
+  // 409 from POST /accounts/{id}/devices — the attach path.
+  'device-belongs-elsewhere': {
+    title: 'That device belongs to another account',
+    description:
+      'Nothing was attached. A device belongs to one account and there is no endpoint that moves it, so it cannot be taken from where it is. Attaching it to the account it already belongs to would have been accepted and changed nothing.',
+  },
+  // 404 from POST /accounts/{id}/devices/create — this one is about the ACCOUNT,
+  // not the device, which is why it is a separate entry from 'not-found'.
+  'account-not-found': {
+    title: 'That account no longer exists',
+    description:
+      'Nothing was created. The account was there when this screen loaded and is not there now — it may have been deleted from another session. Go back to the accounts list and reload it.',
+  },
+  // 400 from PUT /accounts/{id}/devices/order.
+  'device-order-refused': {
+    title: 'The new order was refused',
+    description:
+      'Nothing was written and the order is unchanged. This endpoint rewrites the order from the complete list, so it refuses one that omits a device of the account, repeats one, or names a device of another account — which means what this screen was holding no longer matches the server. The list has been read again; try the move once more.',
   },
   // 503 AUTH_BUSY — the same bcrypt queue the sign-in path meets, one surface over.
   'password-hashing-busy': {

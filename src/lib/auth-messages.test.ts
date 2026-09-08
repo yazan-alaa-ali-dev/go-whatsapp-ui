@@ -207,10 +207,36 @@ describe('the phase-2 rejections (AC-27, AC-28, TC-15)', () => {
     'self-mutation',
     'last-administrator',
     'password-hashing-busy',
+    // z8pmx9mf19 — the device vocabulary. Four of the five exist because a
+    // status code alone cannot pick between them: a 409 is a taken id on
+    // create and a device owned elsewhere on attach, and a 404 is the account
+    // on create and the device everywhere else. `deviceRejection` in
+    // @/lib/account-devices is the caller that knows which request it made.
+    'device-not-available',
+    'device-id-taken',
+    'device-belongs-elsewhere',
+    'account-not-found',
+    'device-order-refused',
   ]
 
   it('covers every rejection the ticket lists, and nothing else', () => {
     expect(Object.keys(ADMIN_REJECTIONS).sort()).toEqual([...KEYS].sort())
+  })
+
+  it('never turns the device 404 into a statement about permission (z8pmx9mf19)', () => {
+    // The backend answers 404 identically for a device that does not exist and
+    // one belonging to another account, "because doing so would confirm the
+    // device's existence to a caller who may not address it" (§06). This notice
+    // is the one place that answer is put into words, so it is the one place a
+    // guess would leak the oracle the backend withheld.
+    const notice = ADMIN_REJECTIONS['device-not-available']
+    const text = `${notice.title} ${notice.description}`
+    expect(text).not.toMatch(/permission|forbidden|not allowed|denied/i)
+    expect(text).toMatch(/not available/i)
+    // And it states that the two cases are indistinguishable, rather than
+    // silently picking one of them.
+    expect(text).toMatch(/does not exist/i)
+    expect(text).toMatch(/another account/i)
   })
 
   it('sits beside the existing permission-denied entry rather than replacing it', () => {
