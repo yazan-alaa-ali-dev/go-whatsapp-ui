@@ -25,9 +25,7 @@ const MODULES = import.meta.glob('../**/*.{ts,tsx}', {
  * lexer approximation — it can only ever remove text, never hide added code.
  */
 function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1')
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1')
 }
 
 /**
@@ -233,9 +231,7 @@ describe('nothing decodes what the server owns (AC-15, AC-16)', () => {
       // developer would reach for and none of the ways somebody would hand-roll
       // it. Verified free — src/ contains zero occurrences of the three added
       // names — so this costs nothing and closes AC-7 rather than half of it.
-      offenders(
-        /\batob\s*\(|jwt-decode|jwtDecode|jose|base64|Buffer\s*\.\s*from|TextDecoder/,
-      ),
+      offenders(/\batob\s*\(|jwt-decode|jwtDecode|jose|base64|Buffer\s*\.\s*from|TextDecoder/),
       'account_id, epoch and permissions come from GET /auth/me or not at all',
     ).toEqual([])
   })
@@ -488,8 +484,10 @@ describe('navigation and the home surface come from permissions[] (z8pmx9mf17)',
       'src/lib/account-lifecycle.ts',
     ]) {
       const [, source] = SOURCES.find(([candidate]) => candidate === path)!
-      expect(source, `${path} must not import a store — it takes its input as an argument`).not
-        .toMatch(/(?:from|import\()\s*['"][^'"]*stores\//)
+      expect(
+        source,
+        `${path} must not import a store — it takes its input as an argument`,
+      ).not.toMatch(/(?:from|import\()\s*['"][^'"]*stores\//)
       // Case-INsensitive here, unlike the repository-wide rule above, which is
       // case-sensitive so the PERMISSIONS catalogue does not trip its sibling
       // `permissions` rule. These two files contain no spelling of the word at
@@ -561,7 +559,10 @@ describe('navigation and the home surface come from permissions[] (z8pmx9mf17)',
     // real guarantee is the shape of NavItem — there is nowhere to put the flag
     // — and this is what stops it being added, in the model or in the shell that
     // renders it. Both files are free of the word today, so the rule is free.
-    for (const path of ['src/components/layout/navigation.ts', 'src/components/layout/app-shell.tsx']) {
+    for (const path of [
+      'src/components/layout/navigation.ts',
+      'src/components/layout/app-shell.tsx',
+    ]) {
       const [, source] = SOURCES.find(([candidate]) => candidate === path)!
       expect(source, `${path} must drop an unavailable entry, not disable it`).not.toMatch(
         /\bdisabled\b/,
@@ -614,9 +615,7 @@ describe('navigation and the home surface come from permissions[] (z8pmx9mf17)',
     // the same reason, and enterAccount(null) drops the device selection in the
     // same action.
     const [, app] = SOURCES.find(([path]) => path === 'src/App.tsx')!
-    expect(app, 'App.tsx must reset the lens when a session ends').toMatch(
-      /enterAccount\(null\)/,
-    )
+    expect(app, 'App.tsx must reset the lens when a session ends').toMatch(/enterAccount\(null\)/)
   })
 })
 
@@ -731,5 +730,196 @@ describe('the account lifecycle destroys data, so its decisions are pure (z8pmx9
         /useActionMutation/,
       )
     }
+  })
+})
+
+describe('the account devices surface joins on the rows and pays no per-row cost (z8pmx9mf19)', () => {
+  const PANEL = 'src/features/account-devices/account-devices-panel.tsx'
+  const ROW = 'src/features/account-devices/account-device-row.tsx'
+  const WEBHOOK_DIALOG = 'src/features/devices/webhook-dialog.tsx'
+
+  function sourceOf(path: string): string {
+    const found = SOURCES.find(([candidate]) => candidate === path)
+    expect(found, `${path} should be in the module graph`).toBeTruthy()
+    return found![1]
+  }
+
+  it('RULE: the membership list is built by the join, never mapped off the registry query', () => {
+    // AC-5, and the bug the whole first half of this ticket is about. The rows
+    // are the authoritative membership answer; the registry "cannot show a row
+    // the registry did not load" (study §08). Building the list from the
+    // registry drops devices that exist — silently, because the screen still
+    // renders — and the next reorder then submits an incomplete set the endpoint
+    // refuses with a 400 nothing on screen explains.
+    //
+    // Two halves: the join must be what produces the list, and the registry
+    // query's data must not be iterated here at all.
+    const panel = sourceOf(PANEL)
+    expect(panel, 'the list comes from joinAccountDevices(rows, registry)').toMatch(
+      /joinAccountDevices\(\s*rows\.data,\s*registry\.data,?\s*\)/,
+    )
+    expect(
+      /registry\.data\s*(\?\.)?\.?(map|filter|forEach|flatMap)\(/.test(panel),
+      'the registry is joined onto the rows, never iterated into a list of its own',
+    ).toBe(false)
+  })
+
+  it('RULE: the order payload is built from the rows, so a device the registry lost is still in it', () => {
+    // AC-9. `orderSubmission` takes the ROW array rather than a list of ids —
+    // provenance in the signature, the same trick `deleteRequestFor` uses for
+    // expected_devices — but a caller could still hand it the wrong array. This
+    // asserts which one it hands over.
+    expect(sourceOf(PANEL), 'orderSubmission reads the row query, not the joined list').toMatch(
+      /orderSubmission\(\s*rows\.data,/,
+    )
+  })
+
+  it('RULE: the account surface offers exactly one creation path', () => {
+    // AC-18, scoped to what the AC actually says. The generic POST /devices
+    // stays available on the device dashboard, where it is the only path a
+    // `devices.create`-holder without `accounts.manage` has — see the header of
+    // create-device-dialog.tsx. What must not happen is this surface creating a
+    // device that belongs to nobody for the time between two calls.
+    const offenders = SOURCES.filter(
+      ([path, source]) =>
+        (path.startsWith('src/features/account-devices/') ||
+          path === 'src/pages/account-detail.tsx') &&
+        /\baddDevice\b/.test(source),
+    ).map(([path]) => path)
+    expect(
+      offenders,
+      'inside an account, create with createDeviceInAccount — POST /devices does not attach',
+    ).toEqual([])
+    expect(
+      sourceOf('src/features/account-devices/add-device-dialog.tsx'),
+      'and the account-scoped create is the one it calls',
+    ).toMatch(/createDeviceInAccount\(/)
+  })
+
+  it('RULE: a device 404 is classified as "not available" and never as a permission', () => {
+    // AC-23. Asserted on the classifier rather than on the feature files' own
+    // text, because the feature files never write this sentence — they render
+    // whatever the classifier picked, and a 403 falling through to
+    // toActionErrorMessage legitimately does say "permission". The 404 is the
+    // one the backend refuses to explain, and the one that must never be guessed
+    // at: it is byte-identical for a device that does not exist and one
+    // belonging to another account.
+    const lib = sourceOf('src/lib/account-devices.ts')
+    expect(lib, 'the 404 arm maps to the not-available notice').toMatch(
+      /status === 404\)\s*return[^\n]*'device-not-available'/,
+    )
+    expect(
+      /status === 403/.test(lib),
+      'a 403 is not classified here — toActionErrorMessage already renders it, spending no refresh',
+    ).toBe(false)
+  })
+
+  it('RULE: the device row calls no hook, so nothing is instantiated per device', () => {
+    // AC-34, first half. The study's §13 rule 3 generalised: a hook in a row is
+    // one store subscription or one query per row for an answer that does not
+    // vary. Every permission boolean and every mutation is hoisted into the
+    // panel and arrives as a prop.
+    //
+    // `memo(` and `useCallback`/`useMemo` are not hooks in this sense, but they
+    // do not appear in the row either — it takes its callbacks as props — so the
+    // rule can stay a blunt one.
+    const row = sourceOf(ROW)
+    expect(
+      /\buse[A-Z]\w*\(/.test(row),
+      'hoist it into account-devices-panel.tsx and pass it as a prop',
+    ).toBe(false)
+  })
+
+  it('RULE: the device row renders no dialog, or the hooks would arrive inside one', () => {
+    // AC-34, second half — the hole the rule above cannot see on its own. A row
+    // that renders <DeviceWebhookDialog/> passes a hook scan of its own source
+    // while mounting one useQuery and two useMutation per device, which is
+    // exactly what device-card.tsx does one feature over. The panel owns one
+    // instance of each dialog, keyed on which row was chosen.
+    const row = sourceOf(ROW)
+    for (const dialog of ['Dialog', 'AlertDialog', 'Sheet']) {
+      expect(
+        new RegExp(`<${dialog}[\\s/>]`).test(row),
+        `${dialog} belongs to the panel, mounted once for the whole list`,
+      ).toBe(false)
+    }
+    // And the panel is where they actually are.
+    expect(sourceOf(PANEL)).toMatch(/<DeviceWebhookDialog/)
+  })
+
+  it('RULE: the stored webhook secret reaches no rendered node and no message', () => {
+    // AC-32 / AC-35. The secret signs this customer's webhook payloads, and this
+    // dialog is now reachable from every account device row — including by a
+    // viewer holding only devices.webhook.read. It is held in state so an
+    // unrelated save cannot destroy it, and it goes nowhere else:
+    //
+    // 1. Never into an input's value. A masked field would still put the real
+    //    value in a DOM attribute; not rendering it is strictly stronger.
+    // 2. Never into a toast or a template.
+    // 3. Never as the server's own text after a failed save, because a 4xx
+    //    rejecting this payload may quote the field it rejected — the same
+    //    reason createFailure redacts a meta_token_ref rejection.
+    const dialog = sourceOf(WEBHOOK_DIALOG)
+    expect(
+      /value=\{secret\}/.test(dialog),
+      'the stored secret is never bound to an input; offer a replacement instead',
+    ).toBe(false)
+    expect(
+      /toast[^\n]*\bsecret\b|`[^`]*\$\{secret\}/.test(dialog),
+      'the secret appears in no message this app writes',
+    ).toBe(false)
+    expect(dialog, 'a failed save is classified before anything is rendered').toMatch(
+      /webhookSaveFailure\(error\)/,
+    )
+    expect(dialog).toContain('WEBHOOK_SAVE_FAILED_REDACTED')
+  })
+
+  it('RULE: the surface shows a position, never a priority, and never says "ready" or offers a move', () => {
+    // Three criteria that are otherwise only assertable by reading the JSX, made
+    // runnable. SOURCES has already stripped comments, so the paragraphs in
+    // these files that EXPLAIN each rule do not trip it — which is the whole
+    // reason that helper exists.
+    //
+    // AC-6: `priority` is the raw column value, 100 by default, meaning
+    //   "unordered". Rendering it invites a manual edit the order endpoint does
+    //   not accept; the operator is shown a position instead.
+    // AC-15: `fallback_allowed` answers whether channel-switching POLICY permits
+    //   this device. Sending also needs it unblocked with a live session, so the
+    //   label is "allowed as fallback" and never "ready".
+    // AC-21: there is no detach endpoint (study §14, Q-6). Delete-and-recreate
+    //   is the only way to move a device, and it destroys its session keys — an
+    //   action that looks like a move and is a purge must not exist.
+    const surface = SOURCES.filter(([path]) => path.startsWith('src/features/account-devices/'))
+    expect(surface.length, 'the surface should be in the module graph').toBeGreaterThan(0)
+    for (const [path, source] of surface) {
+      expect(/\bpriority\b/.test(source), `${path} must show the position, not the priority`).toBe(
+        false,
+      )
+      expect(/\bready\b/i.test(source), `${path}: the label is "allowed as fallback"`).toBe(false)
+      expect(/\bdetach\b/i.test(source), `${path}: there is no detach endpoint to offer`).toBe(
+        false,
+      )
+    }
+  })
+
+  it('RULE: the account API module names no payload-cleaning helper', () => {
+    // AC-13. `src/api/accounts.ts` states this property at length in its own
+    // header — `clean()` drops undefined AND '', and PATCH …/devices/{id} takes
+    // a closed list where '' is the ONLY way to unblock a device, so running it
+    // over that payload turns "unblock this device" into an empty body and
+    // leaves an operator with no way to unblock anything.
+    //
+    // The spec claimed this rule already existed. It did not: that module
+    // carried a paragraph about the rule and nothing that runs it. A rule nobody
+    // can run is what this file exists to replace.
+    const accounts = sourceOf('src/api/accounts.ts')
+    expect(
+      /\bclean\s*\(|from\s+['"][^'"]*api\/request['"]/.test(accounts),
+      'this module builds its payloads literally — see its header',
+    ).toBe(false)
+    // The unblock payload is built with the empty string present.
+    expect(accounts, 'send_state travels as a value, including when it is empty').toMatch(
+      /\{\s*send_state:\s*sendState\s*\}/,
+    )
   })
 })

@@ -1,12 +1,11 @@
 import { useEffect } from 'react'
-import { ArrowRight, Building2 } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { PermissionDenied } from '@/components/shared/permission-denied'
-import { EmptyState } from '@/components/shared/empty-state'
 import { IdText } from '@/components/shared/id-text'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
-import { useAccountDevices } from '@/hooks/use-account-devices'
+import { AccountDevicesPanel } from '@/features/account-devices/account-devices-panel'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useHasPermission } from '@/hooks/use-permissions'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -18,12 +17,15 @@ import { useAuth } from '@/stores/auth'
  * `/accounts/:accountId` — the one administrative route that carries an id, and
  * the one place a URL can move the account scope.
  *
- * The screen itself (devices, users, settings tabs) belongs to later tickets.
- * What is this ticket's is the scope behaviour, and it is the reason this route
- * carries the id at all: the operational screens keep their paths and read the
- * scope from the store, which is what makes a shared link to `/chats` context-free
- * — so the administrative routes carry the id and write it, and a shared link to
- * one of *those* restores the context.
+ * The scope behaviour is what this route carries the id for: the operational
+ * screens keep their paths and read the scope from the store, which is what makes
+ * a shared link to `/chats` context-free — so the administrative routes carry the
+ * id and write it, and a shared link to one of *those* restores the context.
+ *
+ * z8pmx9mf19 fills the screen with the devices surface. **There is no `Tabs`
+ * shell here**, deliberately: a tab strip with one tab is structure built for a
+ * ticket that has not been written. The users tab (10) and the settings tab (11)
+ * introduce it when there is a second thing to switch between.
  */
 export default function AccountDetailPage() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -63,12 +65,11 @@ export default function AccountDetailPage() {
 
 function AccountDetail({ accountId }: { accountId: string }) {
   const { data: accounts } = useAccounts()
-  // z8pmx9mf18: the device count belongs here rather than in a column of the
-  // accounts list — the account object carries no count (study §14, Q-7), and
-  // one request per row of that list to obtain one is not acceptable. Here there
-  // is exactly one account to count. The membership list itself, and everything
-  // that can be done to it, is ticket 9.
-  const { data: devices } = useAccountDevices(accountId)
+  // The device count that stood here in z8pmx9mf18 is gone, and it removed a
+  // duplicate RENDERING rather than a duplicate request: two observers of
+  // accountDevicesKey(id) share one cache entry and one fetch either way. The
+  // panel below owns that list and shows what it contains, so a bare number
+  // above it was the same fact stated twice.
   const name = accountName(accounts, accountId)
 
   return (
@@ -90,17 +91,8 @@ function AccountDetail({ accountId }: { accountId: string }) {
       />
       <div className="flex flex-wrap items-center gap-3">
         <IdText value={accountId} />
-        {devices && (
-          <span className="text-muted-foreground text-xs">
-            {devices.length} device{devices.length === 1 ? '' : 's'}
-          </span>
-        )}
       </div>
-      <EmptyState
-        icon={Building2}
-        title="The account surface is not built yet"
-        hint="Entering the account works: its devices are what the switcher and every operational screen now show. The membership, reply-order and settings tabs arrive with the account surfaces."
-      />
+      <AccountDevicesPanel accountId={accountId} />
     </div>
   )
 }

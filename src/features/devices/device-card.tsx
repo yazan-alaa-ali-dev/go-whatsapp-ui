@@ -160,7 +160,12 @@ export function DeviceCard({
         </div>
       </CardFooter>
 
-      <DeviceWebhookDialog device={device} open={webhookOpen} onOpenChange={setWebhookOpen} />
+      <DeviceWebhookDialog
+        deviceId={device.id}
+        deviceName={device.display_name || device.id}
+        open={webhookOpen}
+        onOpenChange={setWebhookOpen}
+      />
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

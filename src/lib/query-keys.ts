@@ -42,6 +42,17 @@ export const accountsKey = () => ['accounts'] as const
 export const accountDevicesKey = (accountId: string) => ['account-devices', accountId] as const
 
 /**
+ * `GET /devices/{id}/webhook` — one device's webhook configuration.
+ *
+ * Given a builder here rather than left as the inline `['device-webhook', id]`
+ * literal the dialog carried, for the reason this module exists: the entry now
+ * holds a **signing secret** and two surfaces open it, so where it lives and how
+ * long it lives are decisions that belong in one place. The tuple is byte-
+ * identical to the literal it replaces, so no cached entry changes shape.
+ */
+export const deviceWebhookKey = (deviceId: string) => ['device-webhook', deviceId] as const
+
+/**
  * `GET /auth/users`, by page. The response is a flat array with no total, so
  * paging is "next/previous" built on whether a page came back full — the object
  * here records which page was asked for, and invents no count.
