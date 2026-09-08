@@ -9,7 +9,7 @@ created_at: 2026-09-08
 updated_at: 2026-09-08
 links:
   clickup: "https://app.clickup.com/t/z8pmx9mf1b"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/12"
 ---
 
 # Ticket: 11 · Add account settings and wrap the operational screens in the account
