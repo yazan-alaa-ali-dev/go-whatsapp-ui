@@ -299,6 +299,46 @@ export function shouldLeaveDeletedAccount(
 }
 
 /**
+ * Why the device surface has nothing to show.
+ *
+ * Two sentences that look like one and are not (study §11). "This account owns no
+ * devices" invites the operator to add one; "your user belongs to no account"
+ * means there is nowhere to add one **to**, and the only useful next step is an
+ * administrator. Showing the first to somebody in the second state sends them to
+ * a control that cannot help them.
+ */
+export type DeviceEmptyReason = 'no-account' | 'no-devices'
+
+/**
+ * Which of the two the device surface should say.
+ *
+ * **It takes the principal's own account and nothing else — no scope, and no
+ * import of `@/stores/account`.** That is not a simplification; the scope cannot
+ * matter on this surface. `dashboard.tsx` is reached only through `home.tsx`'s
+ * `device` arm — a principal holding neither `accounts.manage` nor
+ * `accounts.manage.all` — and for exactly that principal `scopedDeviceFilter`
+ * answers `null`, so the lens has no effect on the device list they are looking
+ * at. The account they are operating in is their own, always.
+ *
+ * A blank `account_id` is the reference's "belongs to no account" (§05, study
+ * §11): the empty string means the user **owns nothing**, and it never means
+ * *every account* — the same rule `./device-scope` applies to the request filter,
+ * where a blank "resolves to an EMPTY device set, not to every un-accounted
+ * device". The reference also says the system refuses to create a user with a
+ * blank account, so a principal in this state predates the account layer, and
+ * "you have no devices yet" is the wrong diagnosis entirely.
+ *
+ * `null` and `undefined` answer the same as a blank: there is no account to name.
+ * Whitespace is trimmed for the same reason it is everywhere else in this module —
+ * a scope that is whitespace only is a blank, never an id.
+ */
+export function deviceEmptyReason(
+  ownAccountId: string | null | undefined,
+): DeviceEmptyReason {
+  return normalise(ownAccountId) === '' ? 'no-account' : 'no-devices'
+}
+
+/**
  * Is the current scope naming an account that is no longer there?
  *
  * `shouldLeaveDeletedAccount` closes the path where *this* tab did the deleting.

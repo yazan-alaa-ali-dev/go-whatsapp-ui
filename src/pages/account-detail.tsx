@@ -7,9 +7,11 @@ import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AccountDevicesPanel } from '@/features/account-devices/account-devices-panel'
+import { SmsFallbackCard } from '@/features/account-settings/sms-fallback-card'
 import { UsersPanel } from '@/features/user-admin/users-panel'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useHasPermission } from '@/hooks/use-permissions'
+import { smsFallbackState } from '@/lib/account-settings'
 import { PERMISSIONS } from '@/lib/permissions'
 import { accountName, accountScopeEntry, mayEnterAccount } from '@/lib/surfaces'
 import { useAccountStore } from '@/stores/account'
@@ -77,6 +79,12 @@ function AccountDetail({ accountId }: { accountId: string }) {
   // panel below owns that list and shows what it contains, so a bare number
   // above it was the same fact stated twice.
   const name = accountName(accounts, accountId)
+  // Computed here rather than inside the settings card, from the list this
+  // component already holds: there is no GET /accounts/{id}, so the list is the
+  // only source, and a second observer on the same key would be a second reader
+  // of a value that is already here. `unknown` while the list is pending, refused
+  // or missing this account — the card renders that state rather than `false`.
+  const smsFallback = smsFallbackState(accounts, accountId)
 
   return (
     <div className="flex flex-col gap-4">
@@ -107,6 +115,11 @@ function AccountDetail({ accountId }: { accountId: string }) {
         <TabsList>
           <TabsTrigger value="devices">Devices</TabsTrigger>
           {mayManageUsers && <TabsTrigger value="users">Users</TabsTrigger>}
+          {/* Not gated on a further permission: this route is already behind
+              `accounts.manage`, which is exactly what PATCH …/sms-fallback
+              requires alongside scope. A second guard here would hide the tab
+              from nobody and read like a control it is not. */}
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         <TabsContent value="devices">
           <AccountDevicesPanel accountId={accountId} />
@@ -116,6 +129,9 @@ function AccountDetail({ accountId }: { accountId: string }) {
             <UsersPanel accountId={accountId} />
           </TabsContent>
         )}
+        <TabsContent value="settings">
+          <SmsFallbackCard accountId={accountId} state={smsFallback} />
+        </TabsContent>
       </Tabs>
     </div>
   )
