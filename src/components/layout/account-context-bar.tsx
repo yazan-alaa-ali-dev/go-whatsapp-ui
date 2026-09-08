@@ -1,8 +1,9 @@
+import { useEffect } from 'react'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { IdText } from '@/components/shared/id-text'
 import { useAccounts } from '@/hooks/use-accounts'
-import { accountName, isForeignScope } from '@/lib/surfaces'
+import { accountName, isForeignScope, scopeIsGone } from '@/lib/surfaces'
 import { useAccountStore } from '@/stores/account'
 import { useAuth } from '@/stores/auth'
 
@@ -56,6 +57,29 @@ function ForeignAccountBar({ accountId }: { accountId: string }) {
   const { data: accounts } = useAccounts()
   const enterAccount = useAccountStore((state) => state.enterAccount)
   const name = accountName(accounts, accountId)
+
+  /**
+   * The lens must not outlive the account it names (z8pmx9mf18).
+   *
+   * The delete dialog already drops the lens when *this* tab did the deleting.
+   * It cannot close the other path: the scope persists under
+   * `gowa-ui.account.v1` and zustand's persist does not broadcast, so a second
+   * tab — or this browser tomorrow — keeps a lens naming an account somebody
+   * else deleted. `GET /devices?account_id=<gone>` then answers `200` with an
+   * empty array rather than a `404` (reference §05), and the operator reads it
+   * as *I have no devices* with no diagnosis available anywhere. That is exactly
+   * what this bar exists to prevent, one cause further back.
+   *
+   * The decision is `scopeIsGone`, and it is deliberately timid: a pending list,
+   * a refused one and an empty one all leave the lens alone. Clearing an
+   * operator's scope because a request was slow would be a worse bug than the
+   * one being fixed. It runs here rather than in the outer component because
+   * this is where the account list is already loaded — no extra request is made
+   * for it.
+   */
+  useEffect(() => {
+    if (scopeIsGone(accounts, accountId)) enterAccount(null)
+  }, [accounts, accountId, enterAccount])
 
   return (
     <div className="bg-amber-500/10 text-foreground flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-500/30 px-4 py-2 text-sm">

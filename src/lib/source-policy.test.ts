@@ -453,6 +453,15 @@ describe('the account is a lens, not a scope on the wire (z8pmx9mf16)', () => {
         // The one route carrying an account id in its URL, which writes it into
         // the lens so a shared link restores the context.
         'src/pages/account-detail.tsx',
+        // z8pmx9mf18 — the delete. This is the fourth place a human deliberately
+        // changes which account they are acting inside, and the only one where
+        // the account they were inside stops existing: left behind, the lens
+        // names a deleted account and GET /devices?account_id= answers 200 with
+        // an empty array rather than a 404 (reference §05), which reads as "I
+        // have no devices" with no diagnosis available anywhere. The entry buys
+        // one write, `enterAccount(null)`, taken from the pure decision in
+        // @/lib/surfaces — asserted by its own rule below.
+        'src/features/account-admin/delete-account-dialog.tsx',
       ]),
       'read the scope through useDevices(); nothing in lib/ may reach the lens',
     ).toEqual([])
@@ -470,7 +479,14 @@ describe('navigation and the home surface come from permissions[] (z8pmx9mf17)',
     // any specifier ending in `stores/…`, so a relative path and a dynamic
     // import are caught, not only the aliased spelling. An earlier draft matched
     // `from '@/stores/` alone and would have missed both.
-    for (const path of ['src/lib/surfaces.ts', 'src/components/layout/navigation.ts']) {
+    // z8pmx9mf18 adds the third decision module to the loop rather than writing a
+    // fourth rule for it: the guarantee is identical and one loop is one place to
+    // add the next one.
+    for (const path of [
+      'src/lib/surfaces.ts',
+      'src/components/layout/navigation.ts',
+      'src/lib/account-lifecycle.ts',
+    ]) {
       const [, source] = SOURCES.find(([candidate]) => candidate === path)!
       expect(source, `${path} must not import a store — it takes its input as an argument`).not
         .toMatch(/(?:from|import\()\s*['"][^'"]*stores\//)
@@ -601,5 +617,119 @@ describe('navigation and the home surface come from permissions[] (z8pmx9mf17)',
     expect(app, 'App.tsx must reset the lens when a session ends').toMatch(
       /enterAccount\(null\)/,
     )
+  })
+})
+
+describe('the account lifecycle destroys data, so its decisions are pure (z8pmx9mf18)', () => {
+  it('RULE: the delete dialog reads no cache, so expected_devices can only be a live read', () => {
+    // AC-14, and the hole the advisory panel found in the first draft: a count
+    // is a value anything can mint. `deleteRequestFor` now takes the device
+    // ARRAY, which puts the provenance in the signature — but a cached array
+    // would still type-check, so the other half of the guarantee is that this
+    // file cannot reach the cache at all.
+    //
+    // `getQueryData` and `getQueriesData` are the two reads TanStack offers.
+    // Asserted against the file rather than globally: reading the cache is
+    // legitimate anywhere the answer is not about to authorise a purge.
+    const [, dialog] = SOURCES.find(
+      ([path]) => path === 'src/features/account-admin/delete-account-dialog.tsx',
+    )!
+    expect(
+      /getQueryData|getQueriesData/.test(dialog),
+      'expected_devices is the length of a list read at submission — never one out of the cache',
+    ).toBe(false)
+    // And the read itself must be there. Without this the rule above passes on a
+    // file that submits a literal.
+    expect(dialog, 'the submission reads the account’s devices itself').toMatch(
+      /await listAccountDevices\(/,
+    )
+  })
+
+  it('RULE: the delete dialog writes the lens only with what the pure decision returned', () => {
+    // AC-21. The same shape z8pmx9mf17 asserts for the account detail route, for
+    // the same reason: there is no renderer in this environment, so a guard
+    // dropped from this component would leave every unit test green. The lens is
+    // written once, with a literal null, and only behind the pure decision.
+    const [, dialog] = SOURCES.find(
+      ([path]) => path === 'src/features/account-admin/delete-account-dialog.tsx',
+    )!
+    const writes = dialog.match(/enterAccount\([^)]*\)/g) ?? []
+    expect(writes, 'the lens is returned to implicit, and nothing else is written').toEqual([
+      'enterAccount(null)',
+    ])
+    expect(dialog, 'and only when the pure decision says the account is gone').toMatch(
+      /if \(shouldLeaveDeletedAccount\(/,
+    )
+  })
+
+  it('RULE: a delete outcome is read from account_deleted and from no second field', () => {
+    // AC-17. "A deleted message shown on a 200 without reading this field lies to
+    // the operator on every partial run." The decision lives in one function, so
+    // this asserts that the dialog asks it rather than re-deriving the answer
+    // from the report's lists — the shape that would make two fields answer one
+    // question.
+    const [, dialog] = SOURCES.find(
+      ([path]) => path === 'src/features/account-admin/delete-account-dialog.tsx',
+    )!
+    expect(dialog, 'the dialog asks deleteOutcome()').toMatch(/deleteOutcome\(/)
+    expect(
+      /failed_devices\s*(\?\.)?\.?length\s*===|failed_devices\s*(\?\.)?\.?length\s*>/.test(dialog),
+      'the account is kept or gone by account_deleted alone — see deleteOutcome',
+    ).toBe(false)
+  })
+
+  it('RULE: the reference value never reaches a rendered message', () => {
+    // AC-9 / NFR-4. meta_token_ref names an environment variable holding a Meta
+    // access token; it is not the token and must never become one on screen.
+    // Two paths could have put a value there and both are closed:
+    //
+    // 1. The validator's message. `metaTokenRefError` returns a fixed sentence
+    //    naming only the prefix — asserted in account-lifecycle.test.ts, and here
+    //    against the source, because interpolating the argument is the one edit
+    //    that would break it.
+    // 2. The server's own text. A 400 rejecting the field may quote it, so
+    //    `createFailure` redacts server text for any failed request that carried
+    //    a reference. This asserts the dialog uses that decision rather than
+    //    reaching for toActionErrorMessage on its own.
+    const [, lifecycle] = SOURCES.find(([path]) => path === 'src/lib/account-lifecycle.ts')!
+    const messageLine = lifecycle.match(/return `This is the NAME[^`]*`/)?.[0] ?? ''
+    expect(messageLine, 'the validator must return a fixed sentence').not.toBe('')
+    expect(
+      /\$\{(?!META_TOKEN_PREFIX\})/.test(messageLine),
+      'the rejection message names the prefix and never quotes what was typed',
+    ).toBe(false)
+
+    const [, dialog] = SOURCES.find(
+      ([path]) => path === 'src/features/account-admin/create-account-dialog.tsx',
+    )!
+    expect(dialog, 'a failed create is classified before anything is rendered').toMatch(
+      /createFailure\(error,/,
+    )
+    expect(dialog, 'and the redacted arm is the one that renders on a reference failure').toContain(
+      'CREATE_FAILED_REDACTED',
+    )
+    // The value itself is state in this file and travels into the payload
+    // builder. It may reach neither a toast nor a template.
+    expect(
+      /toast[^\n]*metaTokenRef|`[^`]*\$\{metaTokenRef\}/.test(dialog),
+      'the reference is sent and never shown; it appears in no message this app writes',
+    ).toBe(false)
+  })
+
+  it('RULE: neither lifecycle dialog uses the toast-on-success helper', () => {
+    // The house helper toasts success unconditionally and routes every error
+    // through toActionErrorMessage. Both are wrong here: the first would report
+    // `account_deleted: false` as a deletion (AC-17), and the second would bypass
+    // the two 409 notices entirely (AC-12, AC-15). This is a deliberate refusal
+    // of the house pattern, so it is asserted rather than left to review.
+    for (const path of [
+      'src/features/account-admin/delete-account-dialog.tsx',
+      'src/features/account-admin/create-account-dialog.tsx',
+    ]) {
+      const [, source] = SOURCES.find(([candidate]) => candidate === path)!
+      expect(source, `${path} must choose its own success and failure rendering`).not.toMatch(
+        /useActionMutation/,
+      )
+    }
   })
 })

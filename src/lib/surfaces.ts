@@ -236,3 +236,65 @@ export function accountName(
   if (cleaned === '') return null
   return cleaned.length <= MAX_ACCOUNT_NAME ? cleaned : `${cleaned.slice(0, MAX_ACCOUNT_NAME)}…`
 }
+
+/**
+ * Should the session stop standing inside the account it just deleted?
+ *
+ * z8pmx9mf17 made this lens real; z8pmx9mf18 makes it possible to delete the
+ * account the lens names. Left behind, the lens points at an account that no
+ * longer exists — and `GET /devices?account_id=<gone>` answers `200` with an
+ * empty array rather than a `404` (reference §05), which an operator reads as
+ * *I have no devices*, with no diagnosis available anywhere. That is the exact
+ * failure the context bar was built to prevent, reachable again from the delete.
+ *
+ * Only a delete that actually happened moves the lens: a kept account still
+ * exists — `account_deleted: false` is the documented partial outcome — and is
+ * still a legitimate place to be standing.
+ *
+ * It lives here rather than beside the delete dialog's other decisions because
+ * this module already owns every decision about the scope and already normalises
+ * an id in four places; a fifth copy of that normalisation somewhere else is the
+ * divergence this module exists to prevent.
+ */
+export function shouldLeaveDeletedAccount(
+  currentScope: string | null,
+  deletedAccountId: string,
+  accountDeleted: boolean,
+): boolean {
+  if (!accountDeleted) return false
+  const scope = normalise(currentScope)
+  if (scope === '') return false
+  return scope === normalise(deletedAccountId)
+}
+
+/**
+ * Is the current scope naming an account that is no longer there?
+ *
+ * `shouldLeaveDeletedAccount` closes the path where *this* tab did the deleting.
+ * It does not close the other one: the lens persists to `localStorage`
+ * (`gowa-ui.account.v1`) and zustand's persist does not broadcast, so a second
+ * tab — or the same browser tomorrow — keeps a lens naming an account somebody
+ * else deleted, and lands in the same undiagnosable empty device list.
+ *
+ * **Every ambiguous case answers `false`.** The account list arrives from a
+ * request that can be pending, refused, or disabled entirely for a principal who
+ * does not hold `accounts.manage`, and each of those is `undefined` or `[]` here.
+ * Clearing an operator's scope because a request was slow is a worse bug than the
+ * one this exists to fix, so only a **loaded, non-empty** list that does not
+ * contain the scope is treated as an answer.
+ *
+ * A `null` scope is the implicit scope — the principal's own account, which the
+ * server narrows to by itself. It names nothing and can go nowhere.
+ *
+ * The parameter is structurally typed rather than imported from `@/api/accounts`
+ * so this module's import list stays one line long.
+ */
+export function scopeIsGone(
+  accounts: readonly { account_id: string }[] | undefined,
+  currentScope: string | null,
+): boolean {
+  const scope = normalise(currentScope)
+  if (scope === '') return false
+  if (accounts === undefined || accounts.length === 0) return false
+  return !accounts.some((account) => normalise(account.account_id) === scope)
+}

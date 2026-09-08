@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { IdText } from '@/components/shared/id-text'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
+import { useAccountDevices } from '@/hooks/use-account-devices'
 import { useAccounts } from '@/hooks/use-accounts'
 import { useHasPermission } from '@/hooks/use-permissions'
 import { PERMISSIONS } from '@/lib/permissions'
@@ -62,6 +63,12 @@ export default function AccountDetailPage() {
 
 function AccountDetail({ accountId }: { accountId: string }) {
   const { data: accounts } = useAccounts()
+  // z8pmx9mf18: the device count belongs here rather than in a column of the
+  // accounts list — the account object carries no count (study §14, Q-7), and
+  // one request per row of that list to obtain one is not acceptable. Here there
+  // is exactly one account to count. The membership list itself, and everything
+  // that can be done to it, is ticket 9.
+  const { data: devices } = useAccountDevices(accountId)
   const name = accountName(accounts, accountId)
 
   return (
@@ -81,7 +88,14 @@ function AccountDetail({ accountId }: { accountId: string }) {
           </Button>
         }
       />
-      <IdText value={accountId} />
+      <div className="flex flex-wrap items-center gap-3">
+        <IdText value={accountId} />
+        {devices && (
+          <span className="text-muted-foreground text-xs">
+            {devices.length} device{devices.length === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
       <EmptyState
         icon={Building2}
         title="The account surface is not built yet"
