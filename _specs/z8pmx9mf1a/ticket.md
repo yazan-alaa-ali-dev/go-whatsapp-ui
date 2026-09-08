@@ -9,7 +9,7 @@ created_at: 2026-09-08
 updated_at: 2026-09-08
 links:
   clickup: "https://app.clickup.com/t/z8pmx9mf1a"
-  github: ""
+  github: "https://github.com/yazan-alaa-ali-dev/go-whatsapp-ui/pull/11"
 ---
 
 # Ticket: 10 · Build the users administration surface
