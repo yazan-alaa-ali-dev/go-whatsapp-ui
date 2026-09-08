@@ -20,6 +20,8 @@ import {
   passwordByteLength,
   passwordError,
   passwordFailure,
+  assignableRoles,
+  GLOBALLY_SCOPED_ROLES,
   SEEDED_ROLES,
   updatePayloadFrom,
   usernameError,
@@ -295,7 +297,10 @@ describe('roles replace rather than merge (TC-4, AC-18)', () => {
   })
 
   it('submits the complete set when one is added — never a delta', () => {
-    const payload = updatePayloadFrom(ORIGINAL, { ...ORIGINAL, roles: ['admin', 'user', 'billing'] })
+    const payload = updatePayloadFrom(ORIGINAL, {
+      ...ORIGINAL,
+      roles: ['admin', 'user', 'billing'],
+    })
     expect(payload.roles).toEqual(['admin', 'user', 'billing'])
   })
 
@@ -311,6 +316,44 @@ describe('roles replace rather than merge (TC-4, AC-18)', () => {
 
   it('offers the three seeded ids and nothing more', () => {
     expect(SEEDED_ROLES).toEqual(['user', 'admin', 'super_admin'])
+  })
+})
+
+describe('which seeded roles a principal may be offered', () => {
+  it('offers every seeded id to a principal holding the global grant', () => {
+    expect(assignableRoles(true)).toEqual(['user', 'admin', 'super_admin'])
+  })
+
+  it('RULE: without the global grant, only the account-scoped roles are offered', () => {
+    // An account administrator holds `users.manage` and not `users.manage.all`.
+    // The backend refuses privilege escalation — "you cannot grant a permission
+    // you do not hold yourself" — with a 403, so offering `super_admin` is
+    // offering a control that will be refused.
+    expect(assignableRoles(false)).toEqual(['user', 'admin'])
+    expect(assignableRoles(false)).not.toContain('super_admin')
+  })
+
+  it('drops every globally scoped id, not one name', () => {
+    // The classification is a list, so a second global role seeded later is
+    // covered by the same decision rather than by a second special case.
+    for (const global of GLOBALLY_SCOPED_ROLES) {
+      expect(assignableRoles(false)).not.toContain(global)
+      expect(assignableRoles(true)).toContain(global)
+    }
+  })
+
+  it('leaves SEEDED_ROLES itself untouched — it is a classifier, not the offer', () => {
+    // The edit dialog uses it to tell a seeded id from an operator-composed one,
+    // and that question does not change with who is asking.
+    assignableRoles(false)
+    expect(SEEDED_ROLES).toEqual(['user', 'admin', 'super_admin'])
+  })
+
+  it('the decision takes a permission, so it never asks what anybody is called', () => {
+    // The whole point of the boolean: the same two answers are reachable by a
+    // composed role that holds `users.manage.all` and by one that does not, and
+    // neither is expressible as a comparison against a role name.
+    expect(assignableRoles(true)).not.toEqual(assignableRoles(false))
   })
 })
 

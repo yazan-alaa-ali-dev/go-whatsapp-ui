@@ -27,7 +27,10 @@ import { useAccounts } from '@/hooks/use-accounts'
 import { ADMIN_REJECTIONS } from '@/lib/auth-messages'
 import { accountsKey } from '@/lib/query-keys'
 import { accountName, displayText } from '@/lib/surfaces'
+import { useHasPermission } from '@/hooks/use-permissions'
+import { PERMISSIONS } from '@/lib/permissions'
 import {
+  assignableRoles,
   collisionDetail,
   createUserPayloadFrom,
   emailError,
@@ -39,7 +42,6 @@ import {
   passwordByteLength,
   passwordError,
   passwordFailure,
-  SEEDED_ROLES,
   usernameError,
   userRejection,
   type AccountArm,
@@ -74,6 +76,14 @@ import {
 export function CreateUserDialog({ accountId }: { accountId?: string }) {
   const queryClient = useQueryClient()
   const { data: accounts } = useAccounts()
+  // `users.manage.all` — the GLOBAL half of the pair, which a super administrator
+  // holds and an account administrator does not. It gates which seeded roles are
+  // offered below, and it is a permission rather than a role name on purpose:
+  // roles are database rows an operator recomposes without a redeploy, so a
+  // capability read off one lies the first time a fourth role exists. One
+  // subscription for the dialog, selecting a boolean.
+  const mayGrantGlobalRoles = useHasPermission(PERMISSIONS.USERS_MANAGE_ALL)
+  const offeredRoles = assignableRoles(mayGrantGlobalRoles)
 
   const [open, setOpen] = useState(false)
   const [arm, setArm] = useState<AccountArm>('existing')
@@ -233,8 +243,8 @@ export function CreateUserDialog({ accountId }: { accountId?: string }) {
               required
             />
             <p className="text-muted-foreground text-xs">
-              2–64 characters, starting with a letter or a digit. <code>@</code> is allowed, so
-              an email address can be a login name. Stored lower-cased, which is why the field
+              2–64 characters, starting with a letter or a digit. <code>@</code> is allowed, so an
+              email address can be a login name. Stored lower-cased, which is why the field
               lower-cases as you type.
             </p>
             {nameProblem && <p className="text-destructive text-xs">{nameProblem}</p>}
@@ -283,8 +293,8 @@ export function CreateUserDialog({ accountId }: { accountId?: string }) {
           <fieldset className="flex flex-col gap-3">
             <legend className="text-sm font-medium">Account</legend>
             <p className="text-muted-foreground text-xs">
-              A user with no account can address no device, so one of these is required — and
-              both together is refused.
+              A user with no account can address no device, so one of these is required — and both
+              together is refused.
             </p>
 
             <label className="flex items-center gap-2 text-sm">
@@ -347,12 +357,18 @@ export function CreateUserDialog({ accountId }: { accountId?: string }) {
           <div className="flex flex-col gap-2">
             <Label>Roles (optional)</Label>
             <p className="text-muted-foreground text-xs">
-              There is no endpoint that lists the available roles, so these are the three the
-              backend seeds — an operator can compose others without a redeploy. Leave every box
-              clear to let the server apply its own least privileged default; an id it does not
-              know is refused.
+              There is no endpoint that lists the available roles, so these are the ones the backend
+              seeds — an operator can compose others without a redeploy. Leave every box clear to
+              let the server apply its own least privileged default; an id it does not know is
+              refused.
             </p>
-            {SEEDED_ROLES.map((role) => (
+            {!mayGrantGlobalRoles && (
+              <p className="text-muted-foreground text-xs">
+                Deployment-wide roles are not listed here, because granting a permission you do not
+                hold yourself is refused. You can create users inside your own account.
+              </p>
+            )}
+            {offeredRoles.map((role) => (
               <label key={role} className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={seeded.includes(role)}
@@ -391,8 +407,8 @@ export function CreateUserDialog({ accountId }: { accountId?: string }) {
           </div>
 
           <div className="border-muted-foreground/30 text-muted-foreground rounded-lg border border-dashed p-3 text-xs">
-            The password is sent once and never returned. No response carries a password hash,
-            and nothing on this screen asks for one again.
+            The password is sent once and never returned. No response carries a password hash, and
+            nothing on this screen asks for one again.
           </div>
 
           {failure && (

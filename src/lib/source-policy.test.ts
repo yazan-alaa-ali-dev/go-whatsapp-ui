@@ -1018,12 +1018,25 @@ describe('the users surface holds a credential and displays a role (z8pmx9mf1a)'
   })
 
   it('RULE: the surface never measures the seeded role list against who you are', () => {
-    // The other half of the same hazard, and the shape a "tidy" fix would take:
-    // hiding the super_admin checkbox unless the signed-in principal holds that
-    // role. That is a capability derived from a role name — exactly what this
-    // ticket is built to prevent — and it is recorded in plan.md as a deliberate
-    // non-fix. An admin who ticks the box gets the server's 403; hiding is an
-    // affordance and the server is the only authority.
+    // The other half of the same hazard: deriving what may be granted from the
+    // signed-in principal's ROLE NAME — `if (signedInUser.role === 'super_admin')`
+    // — which lies the first time an operator composes a fourth role, because
+    // roles are database rows and permissions are compile-time constants (§04).
+    //
+    // **z8pmx9mf1a recorded a deliberate non-fix here and it has been reversed.**
+    // That ticket left the super_admin checkbox showing for everyone, on the
+    // grounds that "an admin who ticks the box gets the server's 403". It was
+    // right about the hazard and wrong about the remedy: the option is now hidden
+    // without `users.manage.all`, from a PERMISSION — `assignableRoles` takes a
+    // boolean, the way `mayEnterAccount` does — so a composed role holding the
+    // global grant is offered it and a `super_admin` stripped of it is not. That
+    // is the correct behaviour in both directions, and it is not expressible as a
+    // comparison against a role name.
+    //
+    // The rule below is unchanged and still holds, because the shape it bans —
+    // reading the principal inside a filter over the role list — genuinely does
+    // not occur: the measurement happens in `use-permissions`, the one layer
+    // allowed to make it, and only a boolean reaches the decision.
     for (const path of SURFACE) {
       expect(
         /SEEDED_ROLES\s*\.\s*(some|every|filter|find)\s*\([^)]*\b(user|principal|granted|permissions)\b/.test(
@@ -1032,6 +1045,34 @@ describe('the users surface holds a credential and displays a role (z8pmx9mf1a)'
         `${path}: the seeded list is a set of checkbox options, never a comparison against who you are`,
       ).toBe(false)
     }
+  })
+
+  it('RULE: the roles a create offers are gated on a permission, and on nothing else', () => {
+    // The positive half of the reversal above. Without it the negative rule
+    // passes just as happily if somebody deletes the gate entirely, and the
+    // account administrator is offered `super_admin` again.
+    const create = sourceOf(CREATE)
+    expect(create, 'the create dialog offers the gated list, never the raw one').toMatch(
+      /assignableRoles\(mayGrantGlobalRoles\)/,
+    )
+    expect(create, 'and the gate is the global users permission').toMatch(
+      /useHasPermission\(PERMISSIONS\.USERS_MANAGE_ALL\)/,
+    )
+    expect(
+      /SEEDED_ROLES\s*\.\s*map\(/.test(create),
+      `${CREATE}: render assignableRoles(...), or the gate is bypassed by the list it gates`,
+    ).toBe(false)
+
+    // And the decision itself asks for a permission, not for an identity: its
+    // parameter list may not name the principal in any of the four spellings the
+    // sibling rule above bans.
+    const decisions = sourceOf(DECISIONS)
+    const signature = decisions.match(/export function assignableRoles\([^)]*\)/)?.[0] ?? ''
+    expect(signature, 'assignableRoles should be exported').not.toBe('')
+    expect(
+      /\b(user|principal|granted|permissions)\b/.test(signature),
+      'assignableRoles takes a boolean — @/hooks/use-permissions is the only reader of permissions[]',
+    ).toBe(false)
   })
 
   it('RULE: no password reaches a toast, a template literal or a query key', () => {
